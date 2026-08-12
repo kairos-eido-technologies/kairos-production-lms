@@ -2,9 +2,10 @@ import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { uploadToSupabaseStorage, isSupabaseConfigured } from "@/lib/supabase";
 
-const MAX_BYTES = 12 * 1024 * 1024; // 12MB limit for local storage
-const WARN_BYTES = 6 * 1024 * 1024;
+const MAX_BYTES = 50 * 1024 * 1024; // 50MB limit
+const WARN_BYTES = 10 * 1024 * 1024;
 
 export function FileUploadButton({
   accept, label = "Upload", onUpload,
@@ -21,13 +22,13 @@ export function FileUploadButton({
     if (!file) return;
 
     if (file.size > MAX_BYTES) {
-      toast.error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max limit is 12 MB.`);
+      toast.error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max limit is 50 MB.`);
       e.target.value = "";
       return;
     }
 
     if (file.size > WARN_BYTES) {
-      toast.warning(`Large file (${(file.size / 1024 / 1024).toFixed(1)} MB) — processing...`);
+      toast.warning(`Large file (${(file.size / 1024 / 1024).toFixed(1)} MB) — uploading...`);
     }
 
     setBusy(true);
@@ -35,20 +36,28 @@ export function FileUploadButton({
     try {
       let fileUrl = "";
 
-      // Attempt server upload first
-      try {
-        const fd = new FormData();
-        fd.append("file", file);
-        const res = await fetch("/api/files", { method: "POST", body: fd });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.url) fileUrl = json.url as string;
-        }
-      } catch {
-        // Fallback to local Data URL
+      // 1. Try Supabase Storage direct browser upload first (best for Vercel production)
+      if (isSupabaseConfigured) {
+        const supaUrl = await uploadToSupabaseStorage(file);
+        if (supaUrl) fileUrl = supaUrl;
       }
 
-      // Fallback to FileReader Base64 Data URL if server upload returns no URL
+      // 2. Attempt local server API upload if Supabase is not configured
+      if (!fileUrl) {
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+          const res = await fetch("/api/files", { method: "POST", body: fd });
+          if (res.ok) {
+            const json = await res.json();
+            if (json.url) fileUrl = json.url as string;
+          }
+        } catch {
+          // Fallback
+        }
+      }
+
+      // 3. Fallback to FileReader Base64 Data URL
       if (!fileUrl) {
         fileUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
