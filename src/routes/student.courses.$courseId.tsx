@@ -1,6 +1,6 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect, useMemo, useRef } from "react";
-import { ArrowLeft, Video, FileText, BookOpen, FlaskConical, Link2, Download, CheckCircle2, Circle, Play, Image as ImageIcon, Presentation, ClipboardList, LockKeyhole, CalendarDays, Megaphone, Pin, Search, Send, CornerDownRight, MessageSquare as MsgIcon, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from "lucide-react";
+import { ArrowLeft, Video, FileText, BookOpen, FlaskConical, Link2, Download, CheckCircle2, Circle, Play, Image as ImageIcon, Presentation, ClipboardList, LockKeyhole, CalendarDays, Megaphone, Pin, Search, Send, CornerDownRight, MessageSquare as MsgIcon, ChevronLeft, ChevronRight, Minimize2, Maximize2, Eye } from "lucide-react";
 import { PageHeader, GlassCard } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +12,18 @@ import { useAuth } from "@/lib/store";
 import { useData, courseProgressPct, isCourseExpired, studentAccessFor, type StoreAssessment, type VideoCheckpoint, type CheckpointProgress } from "@/lib/data-store";
 import type { ContentItem, ContentType } from "@/lib/mock-data";
 import { toast } from "sonner";
-import { ClipboardCheck } from "lucide-react";
+import { ClipboardCheck, ChevronDown, Layers } from "lucide-react";
+import { SecurePdfViewer } from "@/components/SecurePdfViewer";
+import { SecurePptViewer } from "@/components/SecurePptViewer";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/student/courses/$courseId")({ component: CourseLearning });
 
@@ -24,7 +35,7 @@ const typeMeta: Record<ContentType, { icon: any; label: string }> = {
   link: { icon: Link2, label: "Link" },
   download: { icon: Download, label: "Download" },
   image: { icon: ImageIcon, label: "Image" },
-  ppt: { icon: Presentation, label: "Slides" },
+  ppt: { icon: Presentation, label: "PowerPoint Presentation (.ppt, .pptx)" },
   assessment: { icon: ClipboardList, label: "Assignment / Quiz" },
 };
 
@@ -43,11 +54,12 @@ function toYouTubeEmbed(url: string): string | null {
 function CourseLearning() {
   const { courseId } = useParams({ from: "/student/courses/$courseId" });
   const { user } = useAuth();
-  const { courses, progress, markItemComplete, unmarkItemComplete, assessments } = useData();
+  const navigate = useNavigate();
+  const { courses, progress, markItemComplete, unmarkItemComplete, assessments, submissions } = useData();
   const course = courses.find((c) => c.id === courseId);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"content" | "announcements" | "discussion">("content");
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [activeTab, setActiveTab] = useState<"content" | "announcements" | "discussion" | "final">("content");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   if (!user) return null;
   if (!course) {
@@ -58,7 +70,8 @@ function CourseLearning() {
       </div>
     );
   }
-  if (!course.studentIds.includes(user.id)) {
+  const isInstructorOrAdmin = user.role === "admin" || user.role === "teacher" || course.teacherId === user.id;
+  if (!course.studentIds.includes(user.id) && !isInstructorOrAdmin) {
     return (
       <div className="space-y-4">
         <Button asChild variant="ghost"><Link to="/student/courses"><ArrowLeft className="mr-2 h-4 w-4" />Back</Link></Button>
@@ -66,7 +79,7 @@ function CourseLearning() {
       </div>
     );
   }
-  if (isCourseExpired(course, user.id)) {
+  if (!isInstructorOrAdmin && isCourseExpired(course, user.id)) {
     const access = studentAccessFor(course, user.id);
     return (
       <div className="space-y-4">
@@ -85,69 +98,158 @@ function CourseLearning() {
     );
   }
 
-  const done = new Set(progress[`${user.id}:${course.id}`] ?? []);
-  const allItems = course.sections.flatMap((s) => s.items);
-  const active: ContentItem | null = activeId
-    ? allItems.find((i) => i.id === activeId) ?? null
-    : allItems[0] ?? null;
-  const pct = courseProgressPct(progress, user.id, course);
+  const done = useMemo(() => new Set(progress[`${user.id}:${course.id}`] ?? []), [progress, user.id, course.id]);
+  const allItems = useMemo(() => course.sections.flatMap((s) => s.items), [course.sections]);
+  const active: ContentItem | null = useMemo(
+    () => (activeId ? allItems.find((i) => i.id === activeId) ?? null : allItems[0] ?? null),
+    [activeId, allItems]
+  );
+  const pct = useMemo(() => courseProgressPct(progress, user.id, course), [progress, user.id, course]);
 
   const toggle = (id: string) => {
     if (done.has(id)) { unmarkItemComplete(user.id, course.id, id); }
     else { markItemComplete(user.id, course.id, id); toast.success("Marked complete"); }
   };
 
-  const currentIndex = active ? allItems.findIndex((i) => i.id === active.id) : -1;
-  const prevItem = currentIndex > 0 ? allItems[currentIndex - 1] : null;
-  const nextItem = currentIndex >= 0 && currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null;
+  const currentIndex = useMemo(() => (active ? allItems.findIndex((i) => i.id === active.id) : -1), [active, allItems]);
+  const prevItem = useMemo(() => (currentIndex > 0 ? allItems[currentIndex - 1] : null), [currentIndex, allItems]);
+  const nextItem = useMemo(
+    () => (currentIndex >= 0 && currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null),
+    [currentIndex, allItems]
+  );
+
+  const fromSource = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
+  const baseContentPath = user.role === "admin" ? "/admin/content" : "/teacher/content";
+  const contentBuilderPath = fromSource === "list" ? baseContentPath : `${baseContentPath}?courseId=${course.id}`;
 
   return (
     <div className="space-y-6">
-      <Button asChild variant="ghost" size="sm"><Link to="/student/courses"><ArrowLeft className="mr-2 h-4 w-4" />All courses</Link></Button>
+      {isInstructorOrAdmin && (
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 backdrop-blur-md">
+          <div className="flex items-center gap-2.5 text-sm font-medium text-amber-400">
+            <Eye className="h-4 w-4 text-amber-400 shrink-0" />
+            <span>Student Preview Mode — Viewing course exactly as seen by enrolled students</span>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate({ to: contentBuilderPath as any })}
+            className="h-8 border-amber-500/40 text-amber-300 hover:bg-amber-500/20 text-xs cursor-pointer gap-1.5"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" /> Back to Content Builder
+          </Button>
+        </div>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          if (isInstructorOrAdmin) {
+            navigate({ to: contentBuilderPath as any });
+          } else {
+            navigate({ to: "/student/courses" as any });
+          }
+        }}
+        className="cursor-pointer"
+      >
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        {isInstructorOrAdmin ? "Back to Content Builder" : "All courses"}
+      </Button>
       <PageHeader
         title={course.name}
         subtitle={`${course.code} · ${allItems.length} items · ${pct}% complete`}
       />
       <Progress value={pct} className="h-1.5" />
 
-      {/* Tabs and Focus Mode Sidebar Toggle */}
-      <div className="flex items-center justify-between border-b border-border pb-1 gap-4">
+      {/* Tabs and Top Header Module Selector Dropdown */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between border-b border-border pb-2 gap-3">
         <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
-          <Button variant={activeTab === "content" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("content")} className="h-9 text-xs shrink-0">
+          <Button variant={activeTab === "content" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("content")} className="h-9 text-xs shrink-0 cursor-pointer">
             Modules & Content
           </Button>
-          <Button variant={activeTab === "announcements" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("announcements")} className="h-9 text-xs shrink-0">
+          <Button variant={activeTab === "announcements" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("announcements")} className="h-9 text-xs shrink-0 cursor-pointer">
             Announcements
           </Button>
-          <Button variant={activeTab === "discussion" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("discussion")} className="h-9 text-xs shrink-0">
+          <Button variant={activeTab === "discussion" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("discussion")} className="h-9 text-xs shrink-0 cursor-pointer">
             Q&A Discussions
           </Button>
+          {assessments.some((a) => a.courseId === course.id) && (
+            <Button variant={activeTab === "final" ? "default" : "ghost"} size="sm" onClick={() => setActiveTab("final")} className="h-9 text-xs shrink-0 cursor-pointer relative">
+              <ClipboardCheck className="h-3.5 w-3.5 mr-1 text-primary" />
+              Final Test / Quiz
+              {pct >= 100 && (
+                <span className="ml-1.5 flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              )}
+            </Button>
+          )}
         </div>
 
-        {activeTab === "content" && allItems.length > 0 && (
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="h-9 text-xs gap-1.5 hidden lg:flex border-border/80 hover:bg-secondary/60 shrink-0 cursor-pointer select-none"
-          >
-            {sidebarOpen ? (
-              <>
-                <Minimize2 className="h-3.5 w-3.5 text-primary" />
-                Focus Mode (Hide List)
-              </>
-            ) : (
-              <>
-                <Maximize2 className="h-3.5 w-3.5 text-primary" />
-                Show Modules List
-              </>
-            )}
-          </Button>
+        {activeTab === "content" && allItems.length > 0 && active && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 px-3.5 gap-2 border-primary/30 bg-primary/5 hover:bg-primary/10 text-xs font-medium cursor-pointer shadow-xs max-w-full sm:max-w-md truncate shrink-0"
+              >
+                <Layers className="h-3.5 w-3.5 text-primary shrink-0" />
+                <span className="truncate">
+                  {course.sections.find((s) => s.items.some((i) => i.id === active.id))?.title || "Modules"} :{" "}
+                  <strong className="font-semibold text-foreground">{active.title}</strong>
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground ml-auto shrink-0" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-[340px] max-h-[480px] overflow-y-auto p-1.5 shadow-xl rounded-xl border-border">
+              <DropdownMenuLabel className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground px-2 py-1 flex items-center justify-between">
+                <span>Course Modules & Lessons</span>
+                <span className="text-[10px] bg-secondary px-1.5 py-0.5 rounded-md text-foreground font-semibold font-mono">{done.size} / {allItems.length} Completed</span>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+
+              {course.sections.map((sec) => (
+                <DropdownMenuGroup key={sec.id} className="py-1">
+                  <div className="px-2 py-1 text-[11px] font-semibold text-primary uppercase tracking-wider bg-secondary/40 rounded-md my-0.5">
+                    {sec.title}
+                  </div>
+                  {sec.items.map((it) => {
+                    const M = typeMeta[it.type] || { icon: FileText, label: it.type || "Content" };
+                    const Icon = M.icon || FileText;
+                    const isDone = done.has(it.id);
+                    const isActive = active.id === it.id;
+                    return (
+                      <DropdownMenuItem
+                        key={it.id}
+                        onClick={() => setActiveId(it.id)}
+                        className={`flex items-center gap-2 px-2.5 py-2 text-xs rounded-lg cursor-pointer my-0.5 ${isActive
+                            ? "bg-primary/15 font-semibold text-primary"
+                            : "hover:bg-secondary/50 text-foreground"
+                          }`}
+                      >
+                        {isDone ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                        ) : (
+                          <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                        )}
+                        <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate flex-1">{it.title}</span>
+                        {isActive && (
+                          <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/20 text-primary border-0 font-medium">
+                            Active
+                          </Badge>
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
+                </DropdownMenuGroup>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
       </div>
 
-      <div className={`grid gap-6 transition-all duration-300 ${sidebarOpen ? "lg:grid-cols-[1fr_320px]" : "grid-cols-1"}`}>
-        <GlassCard className="min-h-[400px]">
+      <div className="w-full">
+        <GlassCard className="min-h-[400px] w-full overflow-hidden">
           {activeTab === "content" && (
             allItems.length === 0 ? (
               <div className="text-center py-16 text-muted-foreground">
@@ -155,16 +257,36 @@ function CourseLearning() {
                 No content yet — your teacher is still building this course.
               </div>
             ) : active ? (
-              <ContentViewer 
-                item={active} 
-                assessments={assessments.filter((a) => a.courseId === course.id)} 
-                onToggleComplete={() => toggle(active.id)} 
-                completed={done.has(active.id)} 
-                userId={user.id}
-                prevItem={prevItem}
-                nextItem={nextItem}
-                onNavigate={setActiveId}
-              />
+              <div className="space-y-4">
+                <ContentViewer
+                  item={active}
+                  assessments={assessments.filter((a) => a.courseId === course.id)}
+                  onToggleComplete={() => toggle(active.id)}
+                  completed={done.has(active.id)}
+                  userId={user.id}
+                  prevItem={prevItem}
+                  nextItem={nextItem}
+                  onNavigate={setActiveId}
+                />
+                
+                {/* Course Completed Congratulatory Banner */}
+                {pct >= 100 && (
+                  <div className="mx-4 mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3 text-emerald-600 dark:text-emerald-400">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                      <div>
+                        <div className="font-bold text-sm">Congratulations! All course lessons completed.</div>
+                        <div className="text-xs text-muted-foreground">Your Final Test is unlocked and ready to take.</div>
+                      </div>
+                    </div>
+                    {assessments.some((a) => a.courseId === course.id) && (
+                      <Button size="sm" onClick={() => setActiveTab("final")} className="bg-emerald-600 text-white hover:bg-emerald-700 border-0 text-xs font-semibold">
+                        Take Final Test <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : null
           )}
 
@@ -175,98 +297,90 @@ function CourseLearning() {
           {activeTab === "discussion" && (
             <StudentCourseDiscussion courseId={course.id} />
           )}
-        </GlassCard>
 
-        {sidebarOpen && (
-          <div className="space-y-3">
-            {course.sections.map((sec) => (
-              <GlassCard key={sec.id} className="p-3">
-                <div className="px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground">{sec.title}</div>
-                <div className="space-y-0.5">
-                  {sec.items.map((it) => {
-                    const M = typeMeta[it.type];
-                    const Icon = M.icon;
-                    const isDone = done.has(it.id);
-                    const isActive = active?.id === it.id;
-                    return (
-                      <button
-                        key={it.id}
-                        onClick={() => setActiveId(it.id)}
-                        className={`w-full flex items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition ${
-                          isActive ? "bg-primary/15" : "hover:bg-secondary/40"
-                        }`}
-                      >
-                        {isDone ? <CheckCircle2 className="h-4 w-4 text-success shrink-0" /> : <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />}
-                        <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="flex-1 truncate">{it.title}</span>
-                      </button>
-                    );
-                  })}
-                  {sec.items.length === 0 && (
-                    <div className="px-2 py-2 text-xs text-muted-foreground">No items in this section.</div>
-                  )}
-                </div>
-              </GlassCard>
-            ))}
-            {course.sections.length === 0 && (
-              <GlassCard className="text-xs text-muted-foreground text-center py-6">No sections yet.</GlassCard>
-            )}
+          {activeTab === "final" && (
+            <div className="p-6 space-y-6">
+              <div className="border-b border-border pb-4">
+                <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                  <ClipboardCheck className="h-5 w-5 text-primary" />
+                  Course Final Test & Assessments
+                </h3>
+                <p className="text-xs text-muted-foreground mt-1">Complete all lessons to unlock the Final Test.</p>
+              </div>
 
-            {(() => {
-              const courseAssessments = assessments.filter((a) => a.courseId === course.id);
-              const regular = courseAssessments.filter((a) => !a.isFinal);
-              const finals = courseAssessments.filter((a) => a.isFinal);
-              const courseComplete = pct >= 100 && allItems.length > 0;
-              return (
-                <>
-                  {regular.length > 0 && (
-                    <GlassCard className="p-3">
-                      <div className="px-2 py-1.5 text-xs uppercase tracking-wider text-muted-foreground">Assignments & Quizzes</div>
-                      <div className="space-y-0.5">
-                        {regular.map((a) => (
-                          <Link key={a.id} to="/student/assessments/$assessmentId" params={{ assessmentId: a.id }}
-                            className="w-full flex items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-secondary/40 transition">
-                            <ClipboardCheck className="h-3.5 w-3.5 text-primary shrink-0" />
-                            <span className="flex-1 truncate">{a.title}</span>
-                            <span className="text-xs text-muted-foreground shrink-0">{a.timeLimit}m</span>
-                          </Link>
-                        ))}
-                      </div>
-                    </GlassCard>
-                  )}
-                  {finals.length > 0 && (
-                    <GlassCard className="p-3 border-primary/30">
-                      <div className="px-2 py-1.5 text-xs uppercase tracking-wider text-primary">Final Test</div>
-                      {!courseComplete && (
-                        <div className="mx-2 mb-2 flex items-center gap-2 rounded-lg border border-warning/30 bg-warning/10 px-2 py-1.5 text-[11px] text-warning">
-                          <LockKeyhole className="h-3 w-3" />Complete all course content ({pct}%) to unlock.
+              {(() => {
+                const courseAssessments = assessments.filter((a) => a.courseId === course.id);
+                const lessonItems = allItems.filter((i) => i.type !== "assessment");
+                const courseComplete = pct >= 100 || (lessonItems.length > 0 ? lessonItems.every((i) => done.has(i.id)) : done.size >= allItems.length);
+
+                if (courseAssessments.length === 0) {
+                  return <div className="text-sm text-muted-foreground py-8 text-center">No assessments created for this course.</div>;
+                }
+
+                return (
+                  <div className="space-y-4">
+                    {!courseComplete && (
+                      <div className="flex items-center gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-600 dark:text-amber-400">
+                        <LockKeyhole className="h-5 w-5 shrink-0" />
+                        <div>
+                          <div className="font-bold">Final Test Locked</div>
+                          <div>Complete all course content ({pct}% completed) to unlock your Final Test.</div>
                         </div>
-                      )}
-                      <div className="space-y-0.5">
-                        {finals.map((a) => (
-                          courseComplete ? (
-                            <Link key={a.id} to="/student/assessments/$assessmentId" params={{ assessmentId: a.id }}
-                              className="w-full flex items-center gap-2 rounded-lg px-2 py-2 text-left text-sm hover:bg-secondary/40 transition">
-                              <ClipboardCheck className="h-3.5 w-3.5 text-primary shrink-0" />
-                              <span className="flex-1 truncate">{a.title}</span>
-                              <span className="text-xs text-muted-foreground shrink-0">{a.timeLimit}m</span>
-                            </Link>
-                          ) : (
-                            <div key={a.id} className="w-full flex items-center gap-2 rounded-lg px-2 py-2 text-sm opacity-50 cursor-not-allowed">
-                              <LockKeyhole className="h-3.5 w-3.5 shrink-0" />
-                              <span className="flex-1 truncate">{a.title}</span>
-                              <span className="text-xs text-muted-foreground shrink-0">{a.timeLimit}m</span>
-                            </div>
-                          )
-                        ))}
                       </div>
-                    </GlassCard>
-                  )}
-                </>
-              );
-            })()}
-          </div>
-        )}
+                    )}
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      {courseAssessments.map((a) => {
+                        const canTake = !a.isFinal || courseComplete;
+                        const mySubsForAssess = submissions.filter((s) => s.studentId === user.id && s.assessmentId === a.id);
+                        const attemptsExhausted = mySubsForAssess.length >= a.attempts;
+                        return (
+                          <div key={a.id} className={`rounded-xl border p-5 transition ${canTake ? "border-primary/40 bg-card hover:border-primary" : "border-border/60 bg-secondary/20 opacity-70"}`}>
+                            <div className="flex items-start justify-between gap-3 mb-2">
+                              <div>
+                                <Badge variant="outline" className={`text-[10px] mb-1 ${a.isFinal ? "border-primary text-primary" : "border-muted-foreground"}`}>
+                                  {a.isFinal ? "Final Test" : "Assignment / Quiz"}
+                                </Badge>
+                                <h4 className="font-bold text-sm text-foreground">{a.title}</h4>
+                              </div>
+                              {attemptsExhausted ? (
+                                <LockKeyhole className="h-4 w-4 text-amber-500 shrink-0" />
+                              ) : canTake ? (
+                                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                              ) : (
+                                <LockKeyhole className="h-4 w-4 text-muted-foreground shrink-0" />
+                              )}
+                            </div>
+                            <div className="text-xs text-muted-foreground mb-4">
+                              {a.questions.length} questions · {a.timeLimit} min time limit · Pass {a.passingScore}%
+                            </div>
+                            {attemptsExhausted ? (
+                              <Button asChild variant="outline" className="w-full text-xs border-amber-500/40 text-amber-600 dark:text-amber-400">
+                                <Link to="/student/assessments/$assessmentId" params={{ assessmentId: a.id }}>
+                                  Attempts Completed (View Details)
+                                </Link>
+                              </Button>
+                            ) : canTake ? (
+                              <Button asChild className="w-full gradient-primary text-primary-foreground border-0 text-xs font-semibold">
+                                <Link to="/student/assessments/$assessmentId" params={{ assessmentId: a.id }}>
+                                  Start {a.isFinal ? "Final Test" : "Assessment"}
+                                </Link>
+                              </Button>
+                            ) : (
+                              <Button disabled variant="outline" className="w-full text-xs cursor-not-allowed">
+                                Complete Lessons ({pct}%) to Unlock
+                              </Button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </GlassCard>
       </div>
     </div>
   );
@@ -416,8 +530,8 @@ function CheckpointVideoPlayer({
       // Check if we crossed any checkpoint since last time update
       const crossedCheckpoint = checkpointsRef.current.find(
         (cp) => !answeredCheckpointsRef.current.has(cp.id) &&
-                lastTimeRef.current < cp.timestamp &&
-                currentTimeVal >= cp.timestamp
+          lastTimeRef.current < cp.timestamp &&
+          currentTimeVal >= cp.timestamp
       );
 
       if (crossedCheckpoint) {
@@ -450,8 +564,8 @@ function CheckpointVideoPlayer({
     // Check if we crossed any checkpoint since last time update
     const crossedCheckpoint = checkpointsRef.current.find(
       (cp) => !answeredCheckpointsRef.current.has(cp.id) &&
-              lastTimeRef.current < cp.timestamp &&
-              currentTimeVal >= cp.timestamp
+        lastTimeRef.current < cp.timestamp &&
+        currentTimeVal >= cp.timestamp
     );
 
     if (crossedCheckpoint) {
@@ -570,15 +684,13 @@ function CheckpointVideoPlayer({
                       type="button"
                       onClick={() => setSelectedMCQ(idx)}
                       disabled={correctFeedback === true}
-                      className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center gap-2.5 cursor-pointer pointer-events-auto ${
-                        selectedMCQ === idx
+                      className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-center gap-2.5 cursor-pointer pointer-events-auto ${selectedMCQ === idx
                           ? "border-primary bg-primary/10 text-foreground"
                           : "border-border/60 hover:bg-secondary/40 text-muted-foreground"
-                      } ${correctFeedback === true && idx === activeCheckpoint.correctIndex ? "border-success bg-success/15 text-success-foreground" : ""}`}
+                        } ${correctFeedback === true && idx === activeCheckpoint.correctIndex ? "border-success bg-success/15 text-success-foreground" : ""}`}
                     >
-                      <span className={`h-4 w-4 rounded-full border grid place-items-center text-[9px] font-bold ${
-                        selectedMCQ === idx ? "border-primary text-primary" : "border-muted-foreground/30"
-                      }`}>
+                      <span className={`h-4 w-4 rounded-full border grid place-items-center text-[9px] font-bold ${selectedMCQ === idx ? "border-primary text-primary" : "border-muted-foreground/30"
+                        }`}>
                         {idx + 1}
                       </span>
                       <span className="flex-1 truncate">{opt}</span>
@@ -593,11 +705,10 @@ function CheckpointVideoPlayer({
                     type="button"
                     onClick={() => setSelectedMCQ(0)}
                     disabled={correctFeedback === true}
-                    className={`p-3 rounded-lg border text-xs font-semibold transition cursor-pointer pointer-events-auto ${
-                      selectedMCQ === 0
+                    className={`p-3 rounded-lg border text-xs font-semibold transition cursor-pointer pointer-events-auto ${selectedMCQ === 0
                         ? "border-primary bg-primary/10 text-foreground"
                         : "border-border/60 hover:bg-secondary/40 text-muted-foreground"
-                    }`}
+                      }`}
                   >
                     True
                   </button>
@@ -605,11 +716,10 @@ function CheckpointVideoPlayer({
                     type="button"
                     onClick={() => setSelectedMCQ(1)}
                     disabled={correctFeedback === true}
-                    className={`p-3 rounded-lg border text-xs font-semibold transition cursor-pointer pointer-events-auto ${
-                      selectedMCQ === 1
+                    className={`p-3 rounded-lg border text-xs font-semibold transition cursor-pointer pointer-events-auto ${selectedMCQ === 1
                         ? "border-primary bg-primary/10 text-foreground"
                         : "border-border/60 hover:bg-secondary/40 text-muted-foreground"
-                    }`}
+                      }`}
                   >
                     False
                   </button>
@@ -679,7 +789,7 @@ function ContentViewer({
   onNavigate: (id: string) => void;
 }) {
   const { videoCheckpoints, checkpointProgress, submitCheckpointAnswer } = useData();
-  const M = typeMeta[item.type];
+  const M = typeMeta[item.type] || { icon: FileText, label: item.type || "Content" };
   const linkedAssessment = item.assessmentId ? assessments.find((a) => a.id === item.assessmentId) : null;
 
   const [absoluteUrl, setAbsoluteUrl] = useState("");
@@ -801,27 +911,7 @@ function ContentViewer({
       )}
 
       {item.type === "pdf" && item.url && (
-        <div className="space-y-3">
-          <div className="relative w-full h-[750px] rounded-xl border border-border bg-white overflow-hidden" onContextMenu={(e) => e.preventDefault()}>
-            <iframe
-              src={`${item.url}#toolbar=0&navpanes=0&scrollbar=1`}
-              className="w-full h-full border-0"
-              title={item.title}
-              onLoad={handleIframeLoad}
-            />
-            {/* Transparent cover blocking right-click menu & click selection inside browser PDF plugin */}
-            <div
-              className={`absolute inset-0 bg-transparent z-10 cursor-default ${pdfOverlayActive ? "pointer-events-auto" : "pointer-events-none"}`}
-              onContextMenu={(e) => e.preventDefault()}
-              onWheel={handlePdfWheel}
-            />
-            {/* Permanent transparent cover over the top 56px to block clicks to Chrome's native PDF download/print buttons */}
-            <div
-              className="absolute top-0 left-0 right-0 h-[56px] bg-transparent z-20 pointer-events-auto cursor-default"
-              onContextMenu={(e) => e.preventDefault()}
-            />
-          </div>
-        </div>
+        <SecurePdfViewer url={item.url} title={item.title} />
       )}
 
       {item.type === "image" && item.url && (
@@ -834,31 +924,10 @@ function ContentViewer({
         />
       )}
 
-      {item.type === "ppt" && item.url && (
-        officeUrl ? (
-          <div className="space-y-3">
-            <div className="relative w-full h-[750px] rounded-xl border border-border bg-white overflow-hidden" onContextMenu={(e) => e.preventDefault()}>
-              <iframe
-                src={officeUrl}
-                className="w-full h-full border-0"
-                title={item.title}
-                onLoad={handleIframeLoad}
-              />
-              {/* Cover the PowerPoint bottom-right status bar options (Download, Print, full options menu) */}
-              <div 
-                className="absolute bottom-0 right-0 w-[240px] h-[38px] bg-background/95 border-l border-t border-border z-20 pointer-events-auto flex items-center justify-center text-[10px] text-muted-foreground select-none font-semibold"
-                onContextMenu={(e) => e.preventDefault()}
-              >
-                🔒 Protected View
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="text-xs text-muted-foreground bg-secondary/30 border border-border/40 p-3.5 rounded-xl text-center">
-            🔒 Slides viewing is protected. Direct download is disabled.
-          </div>
-        )
+      {item.type === "ppt" && (
+        <SecurePptViewer url={item.url} title={item.title} />
       )}
+
 
       {item.type === "assessment" && (
         linkedAssessment ? (
@@ -877,13 +946,49 @@ function ContentViewer({
       )}
 
       {item.type === "reading" && (
-        <div className="prose prose-invert max-w-none whitespace-pre-wrap rounded-xl bg-secondary/40 p-4 text-sm">
-          {item.body || "No content."}
+        <div className="rounded-2xl border border-border/70 bg-secondary/10 p-3 sm:p-6 shadow-inner">
+          <div
+            className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto min-h-[480px]"
+            dangerouslySetInnerHTML={{ __html: item.body || "<p class='text-muted-foreground'>No content added yet.</p>" }}
+          />
+          <style>{`
+            .prose-document h1 { font-size: 2rem !important; font-weight: 700 !important; margin: 0.8em 0 0.4em !important; line-height: 1.25 !important; }
+            .prose-document h2 { font-size: 1.5rem !important; font-weight: 600 !important; margin: 0.7em 0 0.35em !important; line-height: 1.3 !important; }
+            .prose-document h3 { font-size: 1.25rem !important; font-weight: 600 !important; margin: 0.6em 0 0.3em !important; }
+            .prose-document p { margin: 0.6em 0 !important; line-height: 1.6 !important; }
+            .prose-document strong, .prose-document b { font-weight: 700 !important; }
+            .prose-document em, .prose-document i { font-style: italic !important; }
+            .prose-document u { text-decoration: underline !important; }
+            .prose-document s, .prose-document strike { text-decoration: line-through !important; }
+            .prose-document ul { list-style-type: disc !important; padding-left: 1.5em !important; margin: 0.6em 0 !important; }
+            .prose-document ol { list-style-type: decimal !important; padding-left: 1.5em !important; margin: 0.6em 0 !important; }
+            .prose-document li { margin: 0.25em 0 !important; }
+            .prose-document code { background: rgba(99,102,241,0.15) !important; color: #818cf8 !important; padding: 2px 6px !important; border-radius: 4px !important; font-family: monospace !important; font-size: 0.9em !important; }
+            .prose-document hr { border: none !important; border-top: 1px solid hsl(var(--border)) !important; margin: 1.2em 0 !important; }
+            .prose-document img { max-width: 100% !important; height: auto !important; border-radius: 8px !important; margin: 12px 0 !important; display: block !important; }
+          `}</style>
         </div>
       )}
 
-      {item.type === "lab" && item.url && (
-        <iframe src={item.url} className="w-full h-[750px] rounded-xl border border-border" title={item.title} onLoad={handleIframeLoad} />
+      {item.type === "lab" && (
+        <div className="space-y-6">
+          {item.url && (item.url.endsWith(".pdf") || item.url.includes("pdf") || item.url.includes("data:application/pdf")) ? (
+            <SecurePdfViewer url={item.url} title={item.title} />
+          ) : item.url && (item.url.endsWith(".ppt") || item.url.endsWith(".pptx") || item.url.includes("ppt") || item.url.includes("presentation")) ? (
+            <SecurePptViewer url={item.url} title={item.title} />
+          ) : item.url ? (
+            <iframe src={item.url} className="w-full h-[750px] rounded-xl border border-border" title={item.title} onLoad={handleIframeLoad} />
+          ) : null}
+
+          {item.body && (
+            <div className="rounded-2xl border border-border/70 bg-secondary/10 p-3 sm:p-6 shadow-inner">
+              <div
+                className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto min-h-[300px]"
+                dangerouslySetInnerHTML={{ __html: item.body }}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {(item.type === "link" || item.type === "download") && item.url && (
@@ -908,6 +1013,9 @@ function ContentViewer({
 
 function StudentCourseAnnouncements({ courseId }: { courseId: string }) {
   const { announcements } = useData();
+  const [page, setPage] = useState(1);
+  const ITEMS_PER_PAGE = 25;
+
   const courseAnns = useMemo(() => {
     return announcements
       .filter((a) => a.courseId === courseId)
@@ -917,6 +1025,13 @@ function StudentCourseAnnouncements({ courseId }: { courseId: string }) {
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
   }, [announcements, courseId]);
+
+  const totalPages = Math.ceil(courseAnns.length / ITEMS_PER_PAGE) || 1;
+  const currentPage = Math.min(page, totalPages);
+  const paginatedAnns = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return courseAnns.slice(start, start + ITEMS_PER_PAGE);
+  }, [courseAnns, currentPage]);
 
   return (
     <div className="space-y-4">
@@ -931,23 +1046,35 @@ function StudentCourseAnnouncements({ courseId }: { courseId: string }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {courseAnns.map((ann) => (
-            <div
-              key={ann.id}
-              className={`p-5 rounded-2xl border transition ${
-                ann.isPinned ? "border-primary/40 bg-primary/5" : "border-border/60 bg-secondary/10"
-              }`}
-            >
-              <div className="flex items-start justify-between gap-4 mb-2">
-                <div className="flex items-center gap-2">
-                  {ann.isPinned && <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 flex items-center gap-1 text-[10px]"><Pin className="h-3 w-3 shrink-0" /> Pinned</Badge>}
-                  <h4 className="text-sm font-bold text-foreground leading-snug">{ann.title}</h4>
+          <div className="space-y-4">
+            {paginatedAnns.map((ann) => (
+              <div
+                key={ann.id}
+                className={`p-5 rounded-2xl border transition ${ann.isPinned ? "border-primary/40 bg-primary/5" : "border-border/60 bg-secondary/10"
+                  }`}
+              >
+                <div className="flex items-start justify-between gap-4 mb-2">
+                  <div className="flex items-center gap-2">
+                    {ann.isPinned && <Badge variant="outline" className="border-primary/40 text-primary bg-primary/5 flex items-center gap-1 text-[10px]"><Pin className="h-3 w-3 shrink-0" /> Pinned</Badge>}
+                    <h4 className="text-sm font-bold text-foreground leading-snug">{ann.title}</h4>
+                  </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0">{new Date(ann.createdAt).toLocaleDateString()}</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground shrink-0">{new Date(ann.createdAt).toLocaleDateString()}</span>
+                <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">{ann.body}</p>
               </div>
-              <p className="text-xs text-muted-foreground whitespace-pre-wrap leading-relaxed">{ann.body}</p>
+            ))}
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-3 border-t border-border text-xs text-muted-foreground">
+              <span>Showing {((currentPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentPage * ITEMS_PER_PAGE, courseAnns.length)} of {courseAnns.length} announcements</span>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="outline" disabled={currentPage === 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="h-7 text-xs">Previous</Button>
+                <span className="font-semibold text-foreground">Page {currentPage} of {totalPages}</span>
+                <Button size="sm" variant="outline" disabled={currentPage === totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="h-7 text-xs">Next</Button>
+              </div>
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -1049,7 +1176,7 @@ function StudentCourseDiscussion({ courseId }: { courseId: string }) {
         {/* Replies List */}
         <div className="space-y-3 pl-4 border-l-2 border-border/40">
           <h5 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Replies ({activeReplies.length})</h5>
-          
+
           {activeReplies.map((rep) => (
             <div key={rep.id} className="p-4 rounded-xl border border-border/40 bg-secondary/5 flex gap-3">
               <CornerDownRight className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-0.5" />

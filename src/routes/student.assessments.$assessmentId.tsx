@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { toast } from "sonner";
 import { ArrowLeft, Clock, ShieldCheck, AlertTriangle, CheckCircle2, Camera, Eye } from "lucide-react";
 import { PageHeader, GlassCard } from "@/components/ui-kit";
@@ -20,7 +20,7 @@ function QuizPage() {
   const { assessmentId } = useParams({ from: "/student/assessments/$assessmentId" });
   const { user } = useAuth();
   const nav = useNavigate();
-  const { assessments, courses, submissions, submitQuiz, progress } = useData();
+  const { assessments, courses, submissions, submitQuiz, progress, extraAttempts } = useData();
 
   const a = assessments.find((x) => x.id === assessmentId);
   const course = a ? courses.find((c) => c.id === a.courseId) : null;
@@ -30,7 +30,9 @@ function QuizPage() {
     return submissions.filter((s) => s.studentId === user.id && s.assessmentId === a.id);
   }, [submissions, user, a]);
 
-  const attemptsLeft = a ? Math.max(0, a.attempts - mySubs.length) : 0;
+  const grantedExtra = (user && a ? extraAttempts[`${user.id}:${a.id}`] ?? 0 : 0);
+  const maxAttemptsAllowed = a ? a.attempts + grantedExtra : 0;
+  const attemptsLeft = a ? Math.max(0, maxAttemptsAllowed - mySubs.length) : 0;
   const enrolled = !!(user && course?.studentIds.includes(user.id));
 
   const [started, setStarted] = useState(false);
@@ -43,10 +45,18 @@ function QuizPage() {
   const proctor = useProctor({ enabled: startRequested && !done, camera: requiresCamera });
   const proctorReady = proctor.fullscreenActive && (!requiresCamera || proctor.cameraReady);
 
+  const targetEndTimeRef = useRef<number | null>(null);
+
   useEffect(() => {
-    if (!started || done) return;
-    setRemaining(a ? a.timeLimit * 60 : 0);
-  }, [started, a, done]);
+    if (started && !done && a) {
+      if (!targetEndTimeRef.current) {
+        targetEndTimeRef.current = Date.now() + a.timeLimit * 60 * 1000;
+        setRemaining(a.timeLimit * 60);
+      }
+    } else if (done) {
+      targetEndTimeRef.current = null;
+    }
+  }, [started, done, a]);
 
   useEffect(() => {
     if (!startRequested || done || started) return;
@@ -58,13 +68,16 @@ function QuizPage() {
   useEffect(() => {
     if (!started || done) return;
     const t = setInterval(() => {
-      setRemaining((r) => {
-        if (r <= 1) { clearInterval(t); handleSubmit(true); return 0; }
-        return r - 1;
-      });
+      if (!targetEndTimeRef.current) return;
+      const diffMs = targetEndTimeRef.current - Date.now();
+      const diffSecs = Math.max(0, Math.ceil(diffMs / 1000));
+      setRemaining(diffSecs);
+      if (diffSecs <= 0) {
+        clearInterval(t);
+        handleSubmit(true);
+      }
     }, 1000);
     return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started, done]);
 
   if (!a || !course) {
@@ -110,6 +123,10 @@ function QuizPage() {
 
   function handleSubmit(auto = false) {
     if (!user || !a) return;
+    proctor.stopCamera();
+    if (typeof document !== "undefined" && document.fullscreenElement) {
+      document.exitFullscreen?.().catch(() => {});
+    }
     const finalEvent = { at: new Date().toISOString(), type: "submitted" as const, detail: auto ? "timeout" : "manual" };
     const finalEventsList = [...proctor.events, finalEvent];
     const id = submitQuiz(a.id, user.id, answers, finalEventsList);
@@ -179,7 +196,7 @@ function QuizPage() {
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Pass mark</div>
             </div>
             <div className="rounded-xl bg-secondary/40 p-4">
-              <div className="text-xl font-bold">{attemptsLeft}/{a.attempts}</div>
+              <div className="text-xl font-bold">{attemptsLeft}/{maxAttemptsAllowed}</div>
               <div className="text-[10px] uppercase tracking-wider text-muted-foreground">Attempts left</div>
             </div>
           </div>
@@ -204,21 +221,30 @@ function QuizPage() {
           {a.questions.length === 0 ? (
             <div className="text-sm text-destructive">This quiz has no questions yet — ask your instructor.</div>
           ) : attemptsLeft === 0 ? (
-            <div className="text-sm text-destructive">No attempts remaining.</div>
-          ) : startRequested ? (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-border bg-secondary/80 p-4 text-sm">
-                <div className="font-semibold mb-2">Preparing secure assignment/quiz...</div>
-                <p>{proctor.fullscreenActive ? "Fullscreen enabled." : "Waiting for fullscreen permission..."}</p>
-                {requiresCamera && <p>{proctor.cameraReady ? "Camera access granted." : "Waiting for camera permission..."}</p>}
-                {proctor.fullscreenError && <p className="text-destructive">Fullscreen error: {proctor.fullscreenError}</p>}
-                {proctor.cameraError && <p className="text-destructive">Camera error: {proctor.cameraError}</p>}
-                <p className="text-xs text-muted-foreground">You must allow fullscreen for all assignments/quizzes and camera access for final exams before the test begins.</p>
+            <div className="rounded-xl border border-destructive/30 bg-destructive/10 p-5 text-center space-y-3">
+              <div className="mx-auto w-10 h-10 rounded-full bg-destructive/15 grid place-items-center text-destructive">
+                <LockKeyhole className="h-5 w-5" />
               </div>
-              <Button variant="outline" onClick={() => setStartRequested(false)} className="w-full">Cancel</Button>
+              <div className="font-bold text-base text-foreground">Your attempts have been completed</div>
+              <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+                You have used all {a.attempts} allowed attempt{a.attempts === 1 ? "" : "s"} for this assessment. If you want more attempts, please contact your teacher or message admin.
+              </p>
+              <div className="pt-2 flex flex-wrap gap-2 justify-center">
+                <Button asChild size="sm" variant="outline" className="border-primary/40 text-primary text-xs">
+                  <Link to="/student/courses/$courseId" params={{ courseId: course.id }}>Back to Course</Link>
+                </Button>
+              </div>
             </div>
           ) : (
-            <Button onClick={() => setStartRequested(true)} className="w-full gradient-primary text-primary-foreground border-0 glow">
+            <Button
+              onClick={async () => {
+                setStartRequested(true);
+                setStarted(true);
+                proctor.requestFullscreen();
+                if (requiresCamera) proctor.requestCamera();
+              }}
+              className="w-full gradient-primary text-primary-foreground border-0 glow cursor-pointer font-bold py-3 text-base shadow-lg"
+            >
               Start assignment/quiz
             </Button>
           )}
@@ -232,28 +258,6 @@ function QuizPage() {
     );
   }
 
-  // Taking view
-  if (!started && startRequested) {
-    return (
-      <div className="space-y-6 max-w-2xl mx-auto">
-        <GlassCard className="space-y-4 text-center py-12">
-          <div className="text-lg font-semibold">Preparing secure assignment/quiz</div>
-          <div className="text-sm text-muted-foreground">
-            Please allow fullscreen to start the assignment/quiz.
-            {requiresCamera && " Camera access is also required for this final test."}
-          </div>
-          <div className="text-left text-sm text-muted-foreground space-y-2">
-            <div>{proctor.fullscreenActive ? "✔ Fullscreen enabled" : "• Waiting for fullscreen permission"}</div>
-            {requiresCamera && <div>{proctor.cameraReady ? "✔ Camera enabled" : "• Waiting for camera permission"}</div>}
-            {proctor.fullscreenError && <div className="text-destructive">Fullscreen error: {proctor.fullscreenError}</div>}
-            {proctor.cameraError && <div className="text-destructive">Camera error: {proctor.cameraError}</div>}
-          </div>
-          <Button variant="outline" onClick={() => setStartRequested(false)}>Cancel</Button>
-        </GlassCard>
-      </div>
-    );
-  }
-
   const answered = a.questions.filter((q) => (answers[q.id] ?? "").length > 0).length;
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
@@ -262,19 +266,28 @@ function QuizPage() {
   const susCount = proctor.events.filter((e) => ["fullscreen_exit","tab_blur","visibility_hidden","copy","paste","context_menu","key_meta","camera_denied","camera_ended","camera_motion"].includes(e.type)).length;
 
   return (
-    <div className="space-y-6 max-w-2xl mx-auto">
-      <div className="sticky top-0 z-10 bg-background/80 backdrop-blur pb-3 -mt-6 pt-6">
-        <GlassCard className="flex items-center gap-4 py-3">
+    <div className="space-y-6 max-w-2xl mx-auto pb-12">
+      <div className="sticky top-0 z-50 bg-card/95 backdrop-blur-md p-3.5 rounded-b-xl shadow-lg border-b border-border/80 mb-4 -mt-6">
+        <div className="flex items-center justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="font-semibold truncate">{a.title}</div>
-            <Progress value={(answered / Math.max(1, a.questions.length)) * 100} className="h-1 mt-1" />
-            <div className="text-xs text-muted-foreground mt-1">{answered}/{a.questions.length} answered · <span className={susCount > 0 ? "text-warning" : ""}><Eye className="inline h-3 w-3 -mt-0.5" /> {susCount} flag{susCount === 1 ? "" : "s"}</span></div>
+            <div className="font-bold text-sm text-foreground truncate">{a.title}</div>
+            <Progress value={(answered / Math.max(1, a.questions.length)) * 100} className="h-1.5 mt-1.5" />
+            <div className="text-xs text-muted-foreground mt-1 flex items-center gap-2">
+              <span>{answered}/{a.questions.length} answered</span>
+              <span>·</span>
+              <span className={susCount > 0 ? "text-amber-500 font-semibold" : ""}>
+                <Eye className="inline h-3 w-3 -mt-0.5 mr-1" />
+                {susCount} flag{susCount === 1 ? "" : "s"}
+              </span>
+            </div>
           </div>
-          <div className={`flex items-center gap-1.5 font-mono text-sm font-bold ${lowTime ? "text-destructive animate-pulse" : "text-primary"}`}>
+          <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border font-mono text-sm font-bold shrink-0 ${
+            lowTime ? "border-destructive/60 bg-destructive/15 text-destructive animate-pulse" : "border-primary/40 bg-primary/10 text-primary"
+          }`}>
             <Clock className="h-4 w-4" />
             {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
           </div>
-        </GlassCard>
+        </div>
       </div>
 
       {requiresCamera && (

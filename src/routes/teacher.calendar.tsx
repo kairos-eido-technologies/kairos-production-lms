@@ -96,16 +96,43 @@ function TeacherCalendar() {
   }, [year, month, firstDayIndex, totalDays, prevMonthTotalDays]);
 
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
+  const [eventsPage, setEventsPage] = useState(1);
+
+  // Fast O(1) lookup map for events by date string
+  const eventsByDayMap = useMemo(() => {
+    const map = new Map<string, typeof allCalEvents>();
+    allCalEvents.forEach((e) => {
+      const key = `${e.date.getFullYear()}-${e.date.getMonth()}-${e.date.getDate()}`;
+      const list = map.get(key) || [];
+      list.push(e);
+      map.set(key, list);
+    });
+    return map;
+  }, [allCalEvents]);
+
+  const getEventsForDay = (d: Date) => {
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    return eventsByDayMap.get(key) || [];
+  };
 
   const selectedDateEvents = useMemo(() => {
     if (!selectedDate) return [];
-    return allCalEvents.filter(
-      (e) =>
-        e.date.getDate() === selectedDate.getDate() &&
-        e.date.getMonth() === selectedDate.getMonth() &&
-        e.date.getFullYear() === selectedDate.getFullYear()
-    );
-  }, [selectedDate, allCalEvents]);
+    return getEventsForDay(selectedDate);
+  }, [selectedDate, eventsByDayMap]);
+
+  const EVENTS_PER_PAGE = 5;
+  const totalEventPages = Math.max(1, Math.ceil(selectedDateEvents.length / EVENTS_PER_PAGE));
+  const currentEventPage = Math.min(eventsPage, totalEventPages);
+
+  const paginatedDateEvents = useMemo(() => {
+    const start = (currentEventPage - 1) * EVENTS_PER_PAGE;
+    return selectedDateEvents.slice(start, start + EVENTS_PER_PAGE);
+  }, [selectedDateEvents, currentEventPage]);
+
+  const handleSelectDate = (d: Date) => {
+    setSelectedDate(d);
+    setEventsPage(1);
+  };
 
   const isToday = (d: Date) => {
     const today = new Date();
@@ -116,17 +143,14 @@ function TeacherCalendar() {
     return selectedDate && d.getDate() === selectedDate.getDate() && d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
   };
 
-  const getEventsForDay = (d: Date) => {
-    return allCalEvents.filter(
-      (e) =>
-        e.date.getDate() === d.getDate() &&
-        e.date.getMonth() === d.getMonth() &&
-        e.date.getFullYear() === d.getFullYear()
-    );
-  };
-
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
   const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
+  const jumpToToday = () => {
+    const now = new Date();
+    setCurrentDate(now);
+    setSelectedDate(now);
+    setEventsPage(1);
+  };
 
   // Event Creation State
   const [creating, setCreating] = useState(false);
@@ -182,7 +206,10 @@ function TeacherCalendar() {
             <h2 className="text-lg font-bold text-foreground">
               {monthNames[month]} {year}
             </h2>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={jumpToToday} className="h-8 text-xs">
+                Today
+              </Button>
               <Button variant="outline" size="icon" onClick={prevMonth} className="h-8 w-8">
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -207,7 +234,7 @@ function TeacherCalendar() {
               return (
                 <button
                   key={idx}
-                  onClick={() => setSelectedDate(date)}
+                  onClick={() => handleSelectDate(date)}
                   className={`min-h-[72px] p-2 flex flex-col items-start justify-between rounded-xl border transition text-left cursor-pointer select-none bg-transparent ${
                     active
                       ? "border-primary/50 bg-primary/10"
@@ -260,7 +287,7 @@ function TeacherCalendar() {
               </div>
             ) : (
               <div className="space-y-3">
-                {selectedDateEvents.map((de) => (
+                {paginatedDateEvents.map((de) => (
                   <div
                     key={de.id}
                     className={`p-4 rounded-xl border flex flex-col gap-2 relative group ${
@@ -290,6 +317,35 @@ function TeacherCalendar() {
                     </div>
                   </div>
                 ))}
+
+                {/* Event list pagination */}
+                {totalEventPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 text-xs border-t border-border/40">
+                    <span className="text-muted-foreground">
+                      {currentEventPage} / {totalEventPages}
+                    </span>
+                    <div className="flex gap-1">
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        disabled={currentEventPage <= 1}
+                        onClick={() => setEventsPage((p) => Math.max(1, p - 1))}
+                        className="h-7 w-7"
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        disabled={currentEventPage >= totalEventPages}
+                        onClick={() => setEventsPage((p) => Math.min(totalEventPages, p + 1))}
+                        className="h-7 w-7"
+                      >
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </GlassCard>

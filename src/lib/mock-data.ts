@@ -15,6 +15,7 @@ export interface User {
   joinedAt: string;
   lastActive?: string;
   courseIds?: string[];
+  group?: string;
   isEmailVerified?: boolean;
   emailVerificationCode?: string;
   phone?: string;

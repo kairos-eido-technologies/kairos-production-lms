@@ -1,13 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, GripVertical, Video, FileText, BookOpen, FlaskConical,
   Link2, Download, ChevronDown, Image as ImageIcon, Presentation, ClipboardList,
-  Megaphone, Pin, MessageSquare, Send, CornerDownRight, Search
+  Megaphone, Pin, MessageSquare, Send, CornerDownRight, Search, Eye, ArrowLeft
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { PageHeader, GlassCard } from "@/components/ui-kit";
+import { PageHeader, GlassCard, CourseThumbnail } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -38,7 +38,7 @@ const typeMeta: Record<ContentType, { icon: typeof Video; label: string; color: 
   link: { icon: Link2, label: "Link", color: "text-muted-foreground" },
   download: { icon: Download, label: "Download", color: "text-muted-foreground" },
   image: { icon: ImageIcon, label: "Image", color: "text-primary" },
-  ppt: { icon: Presentation, label: "Slides", color: "text-warning" },
+  ppt: { icon: Presentation, label: "PowerPoint Presentation (.ppt, .pptx)", color: "text-warning" },
   assessment: { icon: ClipboardList, label: "Assignment / Quiz", color: "text-primary" },
 };
 
@@ -60,10 +60,34 @@ export function ContentBuilder() {
     [courses, user],
   );
   const myCourseIds = useMemo(() => new Set(myCourses.map((c) => c.id)), [myCourses]);
-  const [courseId, setCourseId] = useState<string>("");
+
+  const initialCourseId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("courseId") : null;
+  const initialMatch = useMemo(() => courses.find((c) => c.id === initialCourseId), [courses, initialCourseId]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(initialMatch ? initialCourseId : null);
+  const [courseFilter, setCourseFilter] = useState("");
+  const [courseId, setCourseId] = useState<string>(initialMatch ? (initialCourseId || "") : "");
+
+  const filteredCourses = useMemo(() => {
+    if (!courseFilter.trim()) return myCourses;
+    const q = courseFilter.trim().toLowerCase();
+    return myCourses.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q));
+  }, [myCourses, courseFilter]);
+
   useEffect(() => {
-    if (!courseId && myCourses[0]) setCourseId(myCourses[0].id);
-  }, [myCourses, courseId]);
+    const qCourseId = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("courseId") : null;
+    if (qCourseId) {
+      const match = courses.find((c) => c.id === qCourseId);
+      if (match) {
+        setSelectedCourseId(qCourseId);
+        setCourseId(qCourseId);
+      } else {
+        setSelectedCourseId(null);
+        if (myCourses[0]) setCourseId(myCourses[0].id);
+      }
+    } else if (!courseId && myCourses[0]) {
+      setCourseId(myCourses[0].id);
+    }
+  }, [myCourses, courses, courseId]);
 
   const course = courses.find((c) => c.id === courseId);
 
@@ -179,9 +203,9 @@ export function ContentBuilder() {
   // Checkpoints State
   const [checkpointVideoItem, setCheckpointVideoItem] = useState<ContentItem | null>(null);
   const [editingCheckpointId, setEditingCheckpointId] = useState<string | null>(null);
-  
+
   // Checkpoint Draft fields
-  const [cpTimestamp, setCpTimestamp] = useState(""); 
+  const [cpTimestamp, setCpTimestamp] = useState("");
   const [cpType, setCpType] = useState<"mcq" | "truefalse" | "short">("mcq");
   const [cpPrompt, setCpPrompt] = useState("");
   const [cpOptions, setCpOptions] = useState<string[]>(["", "", "", ""]);
@@ -229,7 +253,7 @@ export function ContentBuilder() {
   const handleSaveCheckpoint = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!checkpointVideoItem) return;
-    
+
     let seconds = 0;
     if (cpTimestamp.includes(":")) {
       const parts = cpTimestamp.split(":");
@@ -340,11 +364,124 @@ export function ContentBuilder() {
     setDel(null);
   };
 
+  if (!selectedCourseId) {
+    return (
+      <div className="space-y-8">
+        <PageHeader
+          title="Content Builder"
+          subtitle="Select a course below to build modules, lessons, assignments & learning resources."
+        />
+
+        <div className="relative max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            value={courseFilter}
+            onChange={(e) => setCourseFilter(e.target.value)}
+            placeholder="Search courses by name or code..."
+            className="pl-10 h-10 bg-secondary/30"
+          />
+        </div>
+
+        {filteredCourses.length === 0 ? (
+          <GlassCard className="text-center py-16">
+            <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/40 mb-3" />
+            <div className="font-semibold text-lg">No courses found</div>
+            <p className="text-sm text-muted-foreground mt-1">
+              {courseFilter ? `No courses matching "${courseFilter}".` : "No courses assigned to you yet."}
+            </p>
+          </GlassCard>
+        ) : (
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {filteredCourses.map((c) => {
+              const sectionCount = c.sections.length;
+              const itemCount = c.sections.reduce((n, s) => n + s.items.length, 0);
+
+              return (
+                <GlassCard
+                  key={c.id}
+                  className="flex flex-col justify-between p-6 hover:border-primary/50 transition-all duration-200 group"
+                >
+                  <div className="space-y-4">
+                    <div className="flex items-start justify-between">
+                      <CourseThumbnail thumbnail={c.thumbnail} name={c.name} className="h-14 w-14 rounded-xl shadow-md" />
+                      <Badge variant="outline" className="border-border text-xs font-mono">{c.code}</Badge>
+                    </div>
+
+                    <div>
+                      <h3 className="font-semibold text-lg text-foreground group-hover:text-primary transition-colors line-clamp-1">{c.name}</h3>
+                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{c.description || "No description provided."}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
+                      <Badge variant="secondary" className="text-[11px] font-normal">
+                        {sectionCount} {sectionCount === 1 ? "Section" : "Sections"}
+                      </Badge>
+                      <Badge variant="secondary" className="text-[11px] font-normal">
+                        {itemCount} {itemCount === 1 ? "Item" : "Items"}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 pt-6 border-t border-border/50 mt-4">
+                    <Button
+                      onClick={() => {
+                        setCourseId(c.id);
+                        setSelectedCourseId(c.id);
+                        if (typeof window !== "undefined") {
+                          const url = new URL(window.location.href);
+                          url.searchParams.set("courseId", c.id);
+                          window.history.pushState({}, "", url.toString());
+                        }
+                      }}
+                      className="flex-1 gradient-primary text-primary-foreground border-0 glow gap-2 cursor-pointer"
+                    >
+                      <Pencil className="h-4 w-4" /> Manage Content
+                    </Button>
+
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="icon"
+                      title="View as Student"
+                      className="border-primary/40 text-primary hover:bg-primary/10 shrink-0"
+                    >
+                      <Link to="/student/courses/$courseId" params={{ courseId: c.id }} search={{ from: "list" }}>
+                        <Eye className="h-4 w-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                </GlassCard>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
+      <div className="flex items-center justify-between">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setSelectedCourseId(null);
+            if (typeof window !== "undefined") {
+              const url = new URL(window.location.href);
+              url.searchParams.delete("courseId");
+              window.history.pushState({}, "", url.toString());
+            }
+          }}
+          className="gap-2 text-muted-foreground hover:text-foreground cursor-pointer"
+        >
+          <ArrowLeft className="h-4 w-4" /> Back to All Courses
+        </Button>
+      </div>
+
       <PageHeader
-        title="Content Builder"
-        subtitle="Build sections with video, PDF, reading, labs, links & files."
+        title={course ? course.name : "Content Builder"}
+        subtitle={course ? `${course.code} · Build sections, lessons, assignments & materials.` : "Build sections with video, PDF, reading, labs, links & files."}
         actions={
           course && (
             activeTab === "content" ? (
@@ -363,16 +500,39 @@ export function ContentBuilder() {
       <div className="flex flex-col gap-0 rounded-2xl overflow-hidden border border-border">
         <GlassCard className="flex flex-wrap items-center gap-4 border-0 rounded-b-none border-b border-border">
           <Label className="text-sm">Editing course</Label>
-          <Select value={courseId} onValueChange={setCourseId}>
+          <Select
+            value={courseId}
+            onValueChange={(val) => {
+              setCourseId(val);
+              setSelectedCourseId(val);
+              if (typeof window !== "undefined") {
+                const url = new URL(window.location.href);
+                url.searchParams.set("courseId", val);
+                window.history.pushState({}, "", url.toString());
+              }
+            }}
+          >
             <SelectTrigger className="w-72"><SelectValue placeholder="Select a course" /></SelectTrigger>
             <SelectContent>
               {myCourses.map((c) => <SelectItem key={c.id} value={c.id}>{c.thumbnail} {c.name}</SelectItem>)}
             </SelectContent>
           </Select>
           {course && (
-            <Badge variant="outline" className="ml-auto border-border">
-              {course.sections.length} sections · {course.sections.reduce((n, s) => n + s.items.length, 0)} items
-            </Badge>
+            <div className="ml-auto flex items-center gap-3">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="gap-2 border-primary/40 text-primary hover:bg-primary/10 shadow-xs"
+              >
+                <Link to="/student/courses/$courseId" params={{ courseId: course.id }} search={{ from: "editor" }}>
+                  <Eye className="h-4 w-4" /> View as Student
+                </Link>
+              </Button>
+              <Badge variant="outline" className="border-border">
+                {course.sections.length} sections · {course.sections.reduce((n, s) => n + s.items.length, 0)} items
+              </Badge>
+            </div>
           )}
         </GlassCard>
         {course && activeTab === "content" && (
@@ -380,14 +540,14 @@ export function ContentBuilder() {
             <div className="flex flex-col gap-1.5 w-full max-w-lg">
               <Label htmlFor="previewVideoUrl" className="text-xs font-semibold">Course Preview Video URL</Label>
               <div className="flex gap-2 w-full">
-                <Input 
-                  id="previewVideoUrl" 
-                  placeholder="e.g. https://www.youtube.com/watch?v=..." 
-                  value={videoUrl} 
+                <Input
+                  id="previewVideoUrl"
+                  placeholder="e.g. https://www.youtube.com/watch?v=..."
+                  value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
                   className="h-9 text-xs bg-secondary/30 flex-1"
                 />
-                <Button 
+                <Button
                   onClick={() => {
                     updateCourse(course.id, { previewVideoUrl: videoUrl });
                     toast.success("Preview video updated.");
@@ -524,22 +684,22 @@ export function ContentBuilder() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="anntitle">Announcement Title</Label>
-                <Input 
-                  id="anntitle" 
-                  value={annTitle} 
-                  onChange={(e) => setAnnTitle(e.target.value)} 
-                  placeholder="e.g. Schedule Update for Midterm Exam" 
+                <Input
+                  id="anntitle"
+                  value={annTitle}
+                  onChange={(e) => setAnnTitle(e.target.value)}
+                  placeholder="e.g. Schedule Update for Midterm Exam"
                   className="text-xs bg-secondary/30 animate-pulse-subtle focus:animate-none"
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="annbody">Announcement Body</Label>
-                <Textarea 
-                  id="annbody" 
-                  rows={6} 
-                  value={annBody} 
-                  onChange={(e) => setAnnBody(e.target.value)} 
-                  placeholder="Write your announcement details here. Students will receive this by email and notification." 
+                <Textarea
+                  id="annbody"
+                  rows={6}
+                  value={annBody}
+                  onChange={(e) => setAnnBody(e.target.value)}
+                  placeholder="Write your announcement details here. Students will receive this by email and notification."
                   className="text-xs bg-secondary/30"
                 />
               </div>
@@ -580,9 +740,8 @@ export function ContentBuilder() {
                   {courseAnnouncements.map((ann) => (
                     <div
                       key={ann.id}
-                      className={`p-5 rounded-2xl border transition ${
-                        ann.isPinned ? "border-primary/40 bg-primary/5" : "border-border/60 bg-secondary/10"
-                      }`}
+                      className={`p-5 rounded-2xl border transition ${ann.isPinned ? "border-primary/40 bg-primary/5" : "border-border/60 bg-secondary/10"
+                        }`}
                     >
                       <div className="flex items-start justify-between gap-4 mb-2">
                         <div className="flex items-center gap-2">
@@ -595,9 +754,9 @@ export function ContentBuilder() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[10px] text-muted-foreground">{new Date(ann.createdAt).toLocaleDateString()}</span>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => {
                               deleteAnnouncement(ann.id);
@@ -638,9 +797,9 @@ export function ContentBuilder() {
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <span className="text-[10px] text-muted-foreground">{new Date(activeThread.createdAt).toLocaleString()}</span>
-                    <Button 
-                      variant="ghost" 
-                      size="icon" 
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={async () => {
                         if (confirm("Are you sure you want to delete this thread?")) {
@@ -660,7 +819,7 @@ export function ContentBuilder() {
               {/* Replies List */}
               <div className="space-y-3 pl-4 border-l-2 border-border/40">
                 <h5 className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider mb-2">Replies ({activeReplies.length})</h5>
-                
+
                 {activeReplies.map((rep) => (
                   <div key={rep.id} className="p-4 rounded-xl border border-border/40 bg-secondary/5 flex gap-3">
                     <CornerDownRight className="h-4 w-4 text-muted-foreground/60 shrink-0 mt-0.5" />
@@ -672,9 +831,9 @@ export function ContentBuilder() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <span className="text-[9px] text-muted-foreground">{new Date(rep.createdAt).toLocaleString()}</span>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-6 w-6 text-destructive hover:text-destructive hover:bg-destructive/10"
                             onClick={() => {
                               deleteDiscussionReply(rep.id);
@@ -754,9 +913,9 @@ export function ContentBuilder() {
                             <Badge variant="outline" className="border-border px-2 py-0.5 text-[10px] font-medium">
                               {count} repl{count === 1 ? "y" : "ies"}
                             </Badge>
-                            <Button 
-                              variant="ghost" 
-                              size="icon" 
+                            <Button
+                              variant="ghost"
+                              size="icon"
                               className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                               onClick={async (e) => {
                                 e.stopPropagation();
@@ -800,7 +959,7 @@ export function ContentBuilder() {
 
       {/* Item dialog */}
       <Dialog open={itemDialog} onOpenChange={setItemDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className={`max-h-[90vh] overflow-y-auto transition-all ${itemDraft.type === "reading" || itemDraft.type === "lab" ? "max-w-4xl sm:max-w-5xl" : "max-w-2xl"}`}>
           <DialogHeader>
             <DialogTitle>{editingItemId ? "Edit content" : "Add content"}</DialogTitle>
             <DialogDescription>Choose a content type and fill in the details.</DialogDescription>
@@ -821,19 +980,60 @@ export function ContentBuilder() {
               <Label htmlFor="ititle">Title</Label>
               <Input id="ititle" value={itemDraft.title} onChange={(e) => setItemDraft({ ...itemDraft, title: e.target.value })} placeholder="e.g. Welcome & Overview" />
             </div>
-            {(itemDraft.type === "reading" || itemDraft.type === "lab") ? (
+            {itemDraft.type === "reading" ? (
               <div className="space-y-2">
-                <Label htmlFor="ibody">
-                  {itemDraft.type === "reading" ? "Reading content" : "Lab instructions"}
+                <Label htmlFor="ibody" className="font-semibold text-sm">
+                  Reading content (Document Editor)
                 </Label>
                 <RichTextEditor
                   value={itemDraft.body}
                   onChange={(html) => setItemDraft({ ...itemDraft, body: html })}
-                  placeholder={itemDraft.type === "reading"
-                    ? "Write the reading material here — use bold, headings, lists, colours…"
-                    : "Write the lab instructions, steps, and notes here…"}
-                  minHeight={260}
+                  placeholder="Type or paste your reading material here — format headings, text colours, bullet points, and code blocks..."
+                  minHeight={380}
                 />
+              </div>
+            ) : itemDraft.type === "lab" ? (
+              <div className="space-y-4 rounded-xl border border-border/80 bg-secondary/20 p-4">
+                <div>
+                  <Label className="font-semibold text-sm">Lab Material Options</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">Upload a PDF lab sheet, PowerPoint presentation, write Reading instructions, or provide a URL.</p>
+                </div>
+
+                <div className="space-y-4">
+                  {/* File Uploads for PDF / PPT */}
+                  <div className="space-y-2">
+                    <Label className="text-xs font-semibold">Option 1: Upload Lab Document / Presentation</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <FileUploadButton
+                        accept="application/pdf"
+                        label="Upload Lab PDF (.pdf)"
+                        onUpload={(dataUrl, file) => setItemDraft((d) => ({ ...d, url: dataUrl, fileSize: fileSizeLabel(file.size), title: d.title || file.name }))}
+                      />
+                      <FileUploadButton
+                        accept=".ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                        label="Upload Lab Presentation (.ppt, .pptx)"
+                        onUpload={(dataUrl, file) => setItemDraft((d) => ({ ...d, url: dataUrl, fileSize: fileSizeLabel(file.size), title: d.title || file.name }))}
+                      />
+                    </div>
+                  </div>
+
+                  {/* URL Input */}
+                  <div className="space-y-2">
+                    <Label htmlFor="iurl" className="text-xs font-semibold">Option 2: Lab Embed / Website URL</Label>
+                    <Input id="iurl" value={itemDraft.url} onChange={(e) => setItemDraft({ ...itemDraft, url: e.target.value })} placeholder="https://..." />
+                  </div>
+
+                  {/* Rich Text Editor for Lab Reading Instructions */}
+                  <div className="space-y-2 pt-2 border-t border-border/40">
+                    <Label htmlFor="ibody" className="text-xs font-semibold">Option 3: Write Lab Reading Material / Instructions</Label>
+                    <RichTextEditor
+                      value={itemDraft.body}
+                      onChange={(html) => setItemDraft({ ...itemDraft, body: html })}
+                      placeholder="Write lab instructions, steps, requirements, and notes here..."
+                      minHeight={280}
+                    />
+                  </div>
+                </div>
               </div>
             ) : itemDraft.type === "assessment" ? (
               <div className="space-y-2">
@@ -855,17 +1055,20 @@ export function ContentBuilder() {
               </div>
             ) : (
               <div className="space-y-2">
-                <Label htmlFor="iurl">URL</Label>
+                <Label htmlFor="iurl">Resource URL / Upload</Label>
                 <Input id="iurl" value={itemDraft.url} onChange={(e) => setItemDraft({ ...itemDraft, url: e.target.value })} placeholder="https://..." />
-                {(["video", "pdf", "image", "ppt"] as ContentType[]).includes(itemDraft.type) && (
-                  <FileUploadButton
-                    accept={itemDraft.type === "image" ? "image/*" : itemDraft.type === "ppt" ? ".ppt,.pptx,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" : itemDraft.type === "pdf" ? "application/pdf" : "video/*"}
-                    label={`Upload ${typeMeta[itemDraft.type].label}`}
-                    onUpload={(dataUrl, file) => setItemDraft((d) => ({ ...d, url: dataUrl, fileSize: fileSizeLabel(file.size), title: d.title || file.name }))}
-                  />
+                {(["video", "pdf", "image", "ppt", "download"] as ContentType[]).includes(itemDraft.type) && (
+                  <>
+                    <FileUploadButton
+                      accept={itemDraft.type === "image" ? "image/*" : itemDraft.type === "ppt" ? ".ppt,.pptx,.pdf,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation" : itemDraft.type === "pdf" ? "application/pdf" : itemDraft.type === "video" ? "video/*" : "*/*"}
+                      label={`Upload ${typeMeta[itemDraft.type].label}`}
+                      onUpload={(dataUrl, file) => setItemDraft((d) => ({ ...d, url: dataUrl, fileSize: fileSizeLabel(file.size), title: d.title || file.name }))}
+                    />
+                  </>
                 )}
               </div>
             )}
+
             <div className="grid grid-cols-2 gap-4">
               {(itemDraft.type === "video" || itemDraft.type === "lab") && (
                 <div className="space-y-2">
@@ -902,7 +1105,7 @@ export function ContentBuilder() {
             {/* Left side: List of checkpoints */}
             <div className="space-y-3">
               <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Current Checkpoints ({itemCheckpoints.length})</h4>
-              
+
               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                 {itemCheckpoints.map((cp) => {
                   const m = Math.floor(cp.timestamp / 60);
@@ -1003,7 +1206,7 @@ export function ContentBuilder() {
                         </div>
                       ))}
                     </div>
-                    
+
                     <div className="space-y-1 mt-2">
                       <Label className="text-xs">Correct Index</Label>
                       <Select value={cpCorrectIndex} onValueChange={setCpCorrectIndex}>

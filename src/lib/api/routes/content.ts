@@ -155,10 +155,11 @@ export async function contentRoute(request: Request): Promise<Response> {
         email: u.email,
         role: u.role,
         status: u.status,
-        joinedAt: u.joinedAt.toISOString().slice(0, 10),
+        joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
         lastActive: u.lastActive ? u.lastActive.toISOString() : null,
         avatar: u.avatar,
         phone: u.phone,
+        group: u.group || undefined,
         isEmailVerified: u.isEmailVerified,
         // emailVerificationCode intentionally omitted — sensitive field
         courseIds: allEnrollments.filter((e) => e.studentId === u.id).map((e) => e.courseId),
@@ -199,6 +200,7 @@ export async function contentRoute(request: Request): Promise<Response> {
         email: emailLower,
         passwordHash,
         role: body.role || "student",
+        group: body.group || null,
         status: body.status || "active",
         joinedAt: body.joinedAt ? new Date(body.joinedAt) : now,
         lastActive: null,
@@ -233,6 +235,7 @@ export async function contentRoute(request: Request): Promise<Response> {
         updateData.email = emailLower;
       }
       if (body.role !== undefined) updateData.role = body.role;
+      if (body.group !== undefined) updateData.group = body.group;
       if (body.status !== undefined) updateData.status = body.status;
       if (body.avatar !== undefined) updateData.avatar = body.avatar;
       if (body.phone !== undefined) updateData.phone = body.phone;

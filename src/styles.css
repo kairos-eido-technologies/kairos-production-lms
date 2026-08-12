@@ -37,6 +37,14 @@
   --color-glass: var(--glass);
   --color-success: var(--success);
   --color-warning: var(--warning);
+  --color-hud-indigo: var(--hud-indigo);
+  --color-hud-amber: var(--hud-amber);
+  --color-hud-emerald: var(--hud-emerald);
+  --color-hud-purple: var(--hud-purple);
+  --color-hud-cyan: var(--hud-cyan);
+  --color-hud-rose: var(--hud-rose);
+  --color-hud-orange: var(--hud-orange);
+  --color-hud-sky: var(--hud-sky);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-primary: var(--sidebar-primary);
@@ -87,6 +95,15 @@
   --input: oklch(0.14 0.01 260 / 0.08);
   --ring: oklch(0.52 0.22 25 / 0.45);
 
+  --hud-indigo: oklch(0.55 0.19 275);
+  --hud-amber: oklch(0.62 0.16 75);
+  --hud-emerald: oklch(0.55 0.17 155);
+  --hud-purple: oklch(0.55 0.2 305);
+  --hud-cyan: oklch(0.6 0.13 210);
+  --hud-rose: oklch(0.58 0.2 15);
+  --hud-orange: oklch(0.63 0.18 50);
+  --hud-sky: oklch(0.58 0.15 240);
+
   --sidebar: oklch(0.99 0 0);
   --sidebar-foreground: oklch(0.22 0.01 260);
   --sidebar-primary: oklch(0.52 0.22 25);
@@ -101,6 +118,8 @@
   --gradient-mesh: radial-gradient(at 0% 0%, oklch(0.52 0.22 25 / 0.06) 0px, transparent 50%),
                    radial-gradient(at 100% 100%, oklch(0.60 0.18 200 / 0.06) 0px, transparent 50%);
   --shadow-glow: 0 0 40px oklch(0.52 0.22 25 / 0.18);
+  --shadow-glow-strong: 0 0 0 1px oklch(0.52 0.22 25 / 0.4), 0 0 30px oklch(0.6 0.24 25 / 0.35), 0 20px 60px -10px oklch(0.52 0.22 25 / 0.55);
+  --shadow-panel: 0 1px 0 0 oklch(1 0 0 / 0.6) inset, 0 20px 50px -25px oklch(0.14 0.01 260 / 0.25);
   --shadow-elegant: 0 10px 40px -10px oklch(0.14 0 0 / 0.16);
   --shadow-card: 0 2px 12px oklch(0.14 0 0 / 0.08);
 }
@@ -144,6 +163,15 @@
   --input: oklch(1 0 0 / 0.08);
   --ring: oklch(0.58 0.22 25 / 0.55);
 
+  --hud-indigo: oklch(0.7 0.16 275);
+  --hud-amber: oklch(0.8 0.15 80);
+  --hud-emerald: oklch(0.72 0.16 155);
+  --hud-purple: oklch(0.7 0.18 305);
+  --hud-cyan: oklch(0.78 0.12 205);
+  --hud-rose: oklch(0.72 0.17 15);
+  --hud-orange: oklch(0.76 0.16 55);
+  --hud-sky: oklch(0.72 0.14 240);
+
   --sidebar: oklch(0.10 0 0);
   --sidebar-foreground: oklch(0.92 0 0);
   --sidebar-primary: oklch(0.58 0.22 25);
@@ -158,6 +186,8 @@
   --gradient-mesh: radial-gradient(at 0% 0%, oklch(0.58 0.22 25 / 0.15) 0px, transparent 50%),
                    radial-gradient(at 100% 100%, oklch(0.58 0.22 25 / 0.10) 0px, transparent 50%);
   --shadow-glow: 0 0 40px oklch(0.58 0.22 25 / 0.30);
+  --shadow-glow-strong: 0 0 0 1px oklch(0.66 0.24 25 / 0.5), 0 0 40px oklch(0.66 0.24 25 / 0.45), 0 24px 70px -12px oklch(0.66 0.24 25 / 0.6);
+  --shadow-panel: 0 1px 0 0 oklch(1 0 0 / 0.06) inset, 0 24px 60px -30px oklch(0 0 0 / 0.9);
   --shadow-elegant: 0 10px 40px -10px oklch(0 0 0 / 0.60);
   --shadow-card: 0 2px 16px oklch(0 0 0 / 0.35);
 }
@@ -196,6 +226,42 @@
 }
 
 @layer utilities {
+  /* ── Launchpad HUD utilities ── */
+  .panel {
+    background: color-mix(in oklab, var(--card) 82%, transparent);
+    backdrop-filter: blur(14px);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-panel);
+  }
+  .data-chip {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border-radius: 3px;
+    border: 1px solid var(--border);
+    padding: 0.2rem 0.45rem;
+  }
+  .scanline {
+    position: relative;
+    overflow: hidden;
+    &::after {
+      content: "";
+      position: absolute;
+      inset-inline: 0;
+      top: -40%;
+      height: 40%;
+      background: linear-gradient(
+        to bottom,
+        transparent,
+        color-mix(in oklab, var(--primary-glow) 22%, transparent),
+        transparent
+      );
+      animation: scan-sweep 4.5s linear infinite;
+      pointer-events: none;
+    }
+  }
+
   /* ── Glassmorphism ── */
   .glass {
     background: var(--color-glass);
@@ -285,6 +351,36 @@
     50% { box-shadow: 0 0 0 10px oklch(0.58 0.22 25 / 0); }
   }
   .animate-pulse-glow { animation: pulse-glow 2s ease-out infinite; }
+
+  @keyframes scan-sweep {
+    0% { top: -40%; }
+    100% { top: 120%; }
+  }
+
+  @keyframes marquee {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  @keyframes radar-ping {
+    0% { transform: scale(0.6); opacity: 0.9; }
+    100% { transform: scale(2.2); opacity: 0; }
+  }
+
+  @keyframes seal-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  @keyframes glitch-flicker {
+    0%, 100% { opacity: 1; transform: translateX(0); }
+    20% { opacity: 0.4; transform: translateX(-2px); }
+    40% { opacity: 1; transform: translateX(2px); }
+    60% { opacity: 0.5; transform: translateX(-1px); }
+  }
+
+  .shadow-glow-strong { box-shadow: var(--shadow-glow-strong); }
+  .glow-pulse { animation: pulse-glow 3.6s ease-in-out infinite; }
 
   @keyframes slide-in-right {
     from { opacity: 0; transform: translateX(12px); }

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Pencil, Trash2, BookOpen, Users as UsersIcon, GraduationCap } from "lucide-react";
+import { Plus, Pencil, Trash2, BookOpen, Users as UsersIcon, GraduationCap, Search, X } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageHeader, GlassCard, StatCard, CourseThumbnail } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
@@ -64,16 +64,83 @@ function CourseManagement() {
   const teachers = useMemo(() => users.filter((u) => u.role === "teacher"), [users]);
   const students = useMemo(() => users.filter((u) => u.role === "student"), [users]);
 
+  const [query, setQuery] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Course | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [toDelete, setToDelete] = useState<Course | null>(null);
+
+  // Student Search & Group filter state in Edit/Create course dialog
+  const [studentSearchInEdit, setStudentSearchInEdit] = useState("");
+  const [studentGroupFilterInEdit, setStudentGroupFilterInEdit] = useState("all");
 
   // New badge input state for custom tech badges
   const [newBadgeName, setNewBadgeName] = useState("");
   const [newBadgeIcon, setNewBadgeIcon] = useState("⚡");
 
   const teacherName = (id: string) => users.find((u) => u.id === id)?.name ?? "Unassigned";
+
+  // Unique groups for students
+  const availableStudentGroupsInEdit = useMemo(
+    () => Array.from(new Set(students.map((s) => s.group).filter(Boolean))) as string[],
+    [students]
+  );
+
+  // Filtered students inside edit/create course dialog
+  const filteredStudentsInEdit = useMemo(() => {
+    return students.filter((s) => {
+      const matchesGroup =
+        studentGroupFilterInEdit === "all"
+          ? true
+          : studentGroupFilterInEdit === "none"
+          ? !s.group
+          : s.group === studentGroupFilterInEdit;
+      const q = studentSearchInEdit.trim().toLowerCase();
+      const matchesQuery =
+        !q ||
+        s.name.toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q) ||
+        (s.group && s.group.toLowerCase().includes(q));
+      return matchesGroup && matchesQuery;
+    });
+  }, [students, studentGroupFilterInEdit, studentSearchInEdit]);
+
+  const toggleEnrollEntireGroup = (groupName: string) => {
+    const groupStudents = students.filter((s) => s.group === groupName);
+    const groupStudentIds = groupStudents.map((s) => s.id);
+    const allEnrolled = groupStudentIds.every((id) => draft.studentIds.includes(id));
+
+    if (allEnrolled) {
+      // Unenroll all in group
+      setDraft((prev) => ({
+        ...prev,
+        studentIds: prev.studentIds.filter((id) => !groupStudentIds.includes(id)),
+      }));
+      toast.success(`Unenrolled all students in group "${groupName}".`);
+    } else {
+      // Enroll all in group
+      setDraft((prev) => ({
+        ...prev,
+        studentIds: Array.from(new Set([...prev.studentIds, ...groupStudentIds])),
+      }));
+      toast.success(`Enrolled all ${groupStudents.length} students in group "${groupName}"!`);
+    }
+  };
+
+  const filteredCourses = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return courses;
+    return courses.filter((c) => {
+      const tName = teacherName(c.teacherId).toLowerCase();
+      return (
+        c.name.toLowerCase().includes(q) ||
+        c.code.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        tName.includes(q)
+      );
+    });
+  }, [courses, query, users]);
 
   const openCreate = () => {
     setEditing(null);
@@ -188,8 +255,44 @@ function CourseManagement() {
         <StatCard label="Enrollments" value={courses.reduce((n, c) => n + c.studentIds.length, 0)} icon={UsersIcon} delay={0.1} />
       </div>
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {courses.map((c, i) => (
+      {/* Course Search Bar */}
+      <GlassCard className="p-4 flex flex-wrap items-center justify-between gap-4">
+        <div className="relative flex-1 min-w-[240px] sm:min-w-[320px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            type="text"
+            placeholder="Search courses by title, code, description, or instructor..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9 pr-8 h-10 bg-background/50 border-border/80 text-sm focus-visible:ring-primary/40"
+          />
+          {query && (
+            <button
+              type="button"
+              onClick={() => setQuery("")}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        <div className="text-xs text-muted-foreground font-mono">
+          Showing <span className="font-bold text-foreground">{filteredCourses.length}</span> of <span className="font-bold text-foreground">{courses.length}</span> courses
+        </div>
+      </GlassCard>
+
+      {filteredCourses.length === 0 ? (
+        <GlassCard className="text-center py-16">
+          <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/30 mb-3" />
+          <div className="font-semibold text-lg text-foreground">No courses found</div>
+          <p className="text-sm text-muted-foreground mt-1">No courses match your search criteria "{query}".</p>
+          <Button variant="outline" size="sm" onClick={() => setQuery("")} className="mt-4">
+            Clear search
+          </Button>
+        </GlassCard>
+      ) : (
+        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+          {filteredCourses.map((c, i) => (
           <motion.div
             key={c.id}
             initial={{ opacity: 0, y: 12 }}
@@ -222,8 +325,9 @@ function CourseManagement() {
               </div>
             </GlassCard>
           </motion.div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* Create / edit dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -381,48 +485,116 @@ function CourseManagement() {
                 </div>
               </div>
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>Enrolled students ({draft.studentIds.length})</Label>
-              <p className="text-xs text-muted-foreground">Pick students and set access per student (lifetime or limited with an end date).</p>
-              <ScrollArea className="h-64 rounded-xl border border-border p-2">
-                <div className="space-y-1">
-                  {students.map((s) => {
-                    const enrolled = draft.studentIds.includes(s.id);
-                    const acc = draft.studentAccess[s.id] ?? { accessMode: "lifetime" as const };
+            <div className="space-y-3 sm:col-span-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <Label>Enrolled students ({draft.studentIds.length})</Label>
+                  <p className="text-xs text-muted-foreground">Search and select students or enroll entire cohorts into this course.</p>
+                </div>
+              </div>
+
+              {/* Search & Group Filter Bar */}
+              <div className="grid gap-2 sm:grid-cols-2">
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search students by name, email, or ID..."
+                    value={studentSearchInEdit}
+                    onChange={(e) => setStudentSearchInEdit(e.target.value)}
+                    className="pl-8 h-8 text-xs bg-secondary/30"
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={studentGroupFilterInEdit} onValueChange={setStudentGroupFilterInEdit}>
+                    <SelectTrigger className="h-8 text-xs bg-secondary/30">
+                      <SelectValue placeholder="Filter by Group" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Groups</SelectItem>
+                      <SelectItem value="none">No Group (Unassigned)</SelectItem>
+                      {availableStudentGroupsInEdit.map((grp) => (
+                        <SelectItem key={grp} value={grp}>
+                          {grp}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Quick Group Batch Enroll Shortcut Buttons */}
+              {availableStudentGroupsInEdit.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-muted-foreground font-medium mr-1">Batch Enroll Group:</span>
+                  {availableStudentGroupsInEdit.map((grp) => {
+                    const groupStudents = students.filter((s) => s.group === grp);
+                    const allInGroupEnrolled = groupStudents.length > 0 && groupStudents.every((s) => draft.studentIds.includes(s.id));
                     return (
-                      <div key={s.id} className="rounded-lg px-2 py-1.5 hover:bg-secondary/40">
-                        <label className="flex items-center gap-2 text-sm cursor-pointer w-full">
-                          <Checkbox checked={enrolled} onCheckedChange={() => toggleStudent(s.id)} />
-                          <span className="font-medium truncate">{s.name}</span>
-                          <span className="text-[10px] text-muted-foreground font-mono truncate ml-auto">({s.email} · ID: {s.id})</span>
-                        </label>
-                        {enrolled && (
-                          <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
-                            <RadioGroup
-                              value={acc.accessMode}
-                              onValueChange={(v) => setStudentAccess(s.id, { accessMode: v as "lifetime" | "limited", endDate: v === "lifetime" ? undefined : acc.endDate })}
-                              className="flex gap-2"
-                            >
-                              <Label className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs cursor-pointer">
-                                <RadioGroupItem value="lifetime" id={`life-${s.id}`} className="h-3.5 w-3.5" />Lifetime
-                              </Label>
-                              <Label className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs cursor-pointer">
-                                <RadioGroupItem value="limited" id={`lim-${s.id}`} className="h-3.5 w-3.5" />Limited
-                              </Label>
-                            </RadioGroup>
-                            {acc.accessMode === "limited" && (
-                              <Input
-                                type="date"
-                                value={acc.endDate ?? ""}
-                                onChange={(e) => setStudentAccess(s.id, { endDate: e.target.value })}
-                                className="h-8 w-44 text-xs"
-                              />
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      <Button
+                        key={grp}
+                        type="button"
+                        variant={allInGroupEnrolled ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => toggleEnrollEntireGroup(grp)}
+                        className={`h-7 text-xs ${allInGroupEnrolled ? "gradient-primary text-primary-foreground border-0" : "bg-secondary/40"}`}
+                      >
+                        {allInGroupEnrolled ? "✓ " : "+ "}{grp} ({groupStudents.length})
+                      </Button>
                     );
                   })}
+                </div>
+              )}
+
+              <ScrollArea className="h-64 rounded-xl border border-border p-2">
+                <div className="space-y-1">
+                  {filteredStudentsInEdit.length === 0 ? (
+                    <div className="p-8 text-center text-xs text-muted-foreground">
+                      No students match your search or filter.
+                    </div>
+                  ) : (
+                    filteredStudentsInEdit.map((s) => {
+                      const enrolled = draft.studentIds.includes(s.id);
+                      const acc = draft.studentAccess[s.id] ?? { accessMode: "lifetime" as const };
+                      return (
+                        <div key={s.id} className="rounded-lg px-2 py-1.5 hover:bg-secondary/40">
+                          <label className="flex items-center gap-2 text-sm cursor-pointer w-full">
+                            <Checkbox checked={enrolled} onCheckedChange={() => toggleStudent(s.id)} />
+                            <span className="font-medium truncate">{s.name}</span>
+                            {s.group && (
+                              <Badge variant="outline" className="text-[9px] py-0 bg-secondary/50 font-normal">
+                                {s.group}
+                              </Badge>
+                            )}
+                            <span className="text-[10px] text-muted-foreground font-mono truncate ml-auto">({s.email} · ID: {s.id})</span>
+                          </label>
+                          {enrolled && (
+                            <div className="mt-2 ml-6 flex flex-wrap items-center gap-2">
+                              <RadioGroup
+                                value={acc.accessMode}
+                                onValueChange={(v) => setStudentAccess(s.id, { accessMode: v as "lifetime" | "limited", endDate: v === "lifetime" ? undefined : acc.endDate })}
+                                className="flex gap-2"
+                              >
+                                <Label className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs cursor-pointer">
+                                  <RadioGroupItem value="lifetime" id={`life-${s.id}`} className="h-3.5 w-3.5" />Lifetime
+                                </Label>
+                                <Label className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs cursor-pointer">
+                                  <RadioGroupItem value="limited" id={`lim-${s.id}`} className="h-3.5 w-3.5" />Limited
+                                </Label>
+                              </RadioGroup>
+                              {acc.accessMode === "limited" && (
+                                <Input
+                                  type="date"
+                                  value={acc.endDate ?? ""}
+                                  onChange={(e) => setStudentAccess(s.id, { endDate: e.target.value })}
+                                  className="h-8 w-44 text-xs"
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </ScrollArea>
             </div>

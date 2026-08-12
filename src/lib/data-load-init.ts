@@ -1,8 +1,8 @@
-import { useData } from './data-store';
+import { useData, normalizeCertificateList } from './data-store';
 
 export async function refreshData() {
   if (typeof window === 'undefined') return;
-  
+
   const endpoints = [
     { url: '/api/courses', key: 'courses' },
     { url: '/api/users', key: 'users' },
@@ -27,7 +27,11 @@ export async function refreshData() {
         if (res.ok) {
           const json = await res.json();
           if (json[key]) {
-            useData.setState({ [key]: json[key] });
+            if (key === 'certificates') {
+              useData.setState({ certificates: normalizeCertificateList(json.certificates) });
+            } else {
+              useData.setState({ [key]: json[key] });
+            }
           }
         }
       } catch (err) {

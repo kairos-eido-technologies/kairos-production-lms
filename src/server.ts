@@ -2,6 +2,7 @@ import "./lib/error-capture";
 import { authApiRoutes } from "./lib/api/routes/auth";
 import { filesRoute } from "./lib/api/routes/files";
 import { contentRoute } from "./lib/api/routes/content";
+import { pptxSlidesRoute } from "./lib/api/routes/pptx-slides";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
@@ -60,6 +61,10 @@ export default {
       // files API (single endpoint /api/files handles POST upload and GET download?id=...)
       if (url.pathname === "/api/files") {
         return await filesRoute(request);
+      }
+
+      if (url.pathname === "/api/pptx-slides") {
+        return await pptxSlidesRoute(request);
       }
 
       // content API (courses, sections, content items)

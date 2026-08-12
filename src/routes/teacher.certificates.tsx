@@ -19,11 +19,16 @@ import { openPrintableCertificate } from "@/lib/certificate";
 import { downloadCSV } from "@/lib/exports";
 import type { Certificate } from "@/lib/mock-data";
 
+const ITEMS_PER_PAGE = 25;
+
 export const Route = createFileRoute("/teacher/certificates")({ component: TeacherCertificates });
 
 function TeacherCertificates() {
   const { user } = useAuth();
   const { courses, users, certificates, assessments, submissions, progress, requestCertificate } = useData();
+
+  const [eligiblePage, setEligiblePage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
 
   const myCourses = useMemo(
     () => courses.filter((c) => !user || user.role !== "teacher" || c.teacherId === user.id),
@@ -55,6 +60,21 @@ function TeacherCertificates() {
     }
     return rows;
   }, [myCourses, users, certificates, assessments, submissions, progress]);
+
+  // Paginated lists
+  const eligibleTotalPages = Math.ceil(eligible.length / ITEMS_PER_PAGE) || 1;
+  const currentEligiblePage = Math.min(eligiblePage, eligibleTotalPages);
+  const paginatedEligible = useMemo(() => {
+    const start = (currentEligiblePage - 1) * ITEMS_PER_PAGE;
+    return eligible.slice(start, start + ITEMS_PER_PAGE);
+  }, [eligible, currentEligiblePage]);
+
+  const historyTotalPages = Math.ceil(myCerts.length / ITEMS_PER_PAGE) || 1;
+  const currentHistoryPage = Math.min(historyPage, historyTotalPages);
+  const paginatedHistory = useMemo(() => {
+    const start = (currentHistoryPage - 1) * ITEMS_PER_PAGE;
+    return myCerts.slice(start, start + ITEMS_PER_PAGE);
+  }, [myCerts, currentHistoryPage]);
 
   // request dialog
   const [open, setOpen] = useState(false);
@@ -194,24 +214,37 @@ function TeacherCertificates() {
               No eligible students right now. Once learners enrol and progress through your courses they'll show up here.
             </GlassCard>
           ) : (
-            <div className="space-y-3">
-              {eligible.map((r) => (
-                <GlassCard key={`${r.studentId}-${r.courseId}`} className="flex flex-wrap items-center gap-4">
-                  <div className="h-10 w-10 grid place-items-center rounded-xl bg-primary/15 text-primary text-xs font-bold">
-                    {r.studentName.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+            <div className="space-y-4">
+              <div className="space-y-3">
+                {paginatedEligible.map((r) => (
+                  <GlassCard key={`${r.studentId}-${r.courseId}`} className="flex flex-wrap items-center gap-4">
+                    <div className="h-10 w-10 grid place-items-center rounded-xl bg-primary/15 text-primary text-xs font-bold">
+                      {r.studentName.split(" ").map((w) => w[0]).slice(0, 2).join("")}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{r.studentName}</div>
+                      <div className="text-xs text-muted-foreground truncate">{r.courseName}</div>
+                    </div>
+                    <Badge variant="outline" className="border-border">{r.pct}% complete</Badge>
+                    <Badge variant="outline" className="border-border">Quiz: {r.avgQuiz === null ? "—" : `${r.avgQuiz}%`}</Badge>
+                    <Button size="sm" className="gradient-primary text-primary-foreground border-0"
+                      onClick={() => openFor(r.studentId, r.courseId, r.avgQuiz ?? r.pct)}>
+                      <Award className="h-4 w-4 mr-1.5" />Request
+                    </Button>
+                  </GlassCard>
+                ))}
+              </div>
+
+              {eligibleTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-3 border-t border-border/60 text-xs text-muted-foreground">
+                  <span>Showing {((currentEligiblePage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentEligiblePage * ITEMS_PER_PAGE, eligible.length)} of {eligible.length} students</span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={currentEligiblePage === 1} onClick={() => setEligiblePage((p) => Math.max(1, p - 1))} className="h-7 text-xs">Previous</Button>
+                    <span className="font-semibold text-foreground">Page {currentEligiblePage} of {eligibleTotalPages}</span>
+                    <Button size="sm" variant="outline" disabled={currentEligiblePage === eligibleTotalPages} onClick={() => setEligiblePage((p) => Math.min(eligibleTotalPages, p + 1))} className="h-7 text-xs">Next</Button>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium">{r.studentName}</div>
-                    <div className="text-xs text-muted-foreground truncate">{r.courseName}</div>
-                  </div>
-                  <Badge variant="outline" className="border-border">{r.pct}% complete</Badge>
-                  <Badge variant="outline" className="border-border">Quiz: {r.avgQuiz === null ? "—" : `${r.avgQuiz}%`}</Badge>
-                  <Button size="sm" className="gradient-primary text-primary-foreground border-0"
-                    onClick={() => openFor(r.studentId, r.courseId, r.avgQuiz ?? r.pct)}>
-                    <Award className="h-4 w-4 mr-1.5" />Request
-                  </Button>
-                </GlassCard>
-              ))}
+                </div>
+              )}
             </div>
           )}
         </TabsContent>
@@ -220,35 +253,48 @@ function TeacherCertificates() {
           {myCerts.length === 0 ? (
             <GlassCard className="text-center py-12 text-sm text-muted-foreground">No certificate requests yet.</GlassCard>
           ) : (
-            <div className="space-y-3">
-              {myCerts.map((c) => {
-                const sus = susCount(c);
-                return (
-                <GlassCard key={c.id} className="flex flex-wrap items-center gap-4">
-                  <Award className="h-5 w-5 text-primary" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium">{studentName(c.studentId)}</div>
-                    <div className="text-xs text-muted-foreground truncate">{courseName(c.courseId)} · {c.id}</div>
-                    {c.rejectionReason && <div className="text-xs text-destructive mt-1">Rejected: {c.rejectionReason}</div>}
-                    {(c.proctorLog?.length ?? 0) > 0 && (
-                      <button type="button" onClick={() => setViewingLog(c)} className={`mt-1 inline-flex items-center gap-1 text-xs ${sus > 0 ? "text-warning" : "text-muted-foreground"} hover:underline`}>
-                        <Eye className="h-3 w-3" /> Proctor log · {c.proctorLog!.length} events{sus > 0 ? ` · ${sus} flagged` : ""}
-                      </button>
+            <div className="space-y-4">
+              <div className="space-y-3">
+                {paginatedHistory.map((c) => {
+                  const sus = susCount(c);
+                  return (
+                  <GlassCard key={c.id} className="flex flex-wrap items-center gap-4">
+                    <Award className="h-5 w-5 text-primary" />
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium">{studentName(c.studentId)}</div>
+                      <div className="text-xs text-muted-foreground truncate">{courseName(c.courseId)} · {c.id}</div>
+                      {c.rejectionReason && <div className="text-xs text-destructive mt-1">Rejected: {c.rejectionReason}</div>}
+                      {(c.proctorLog?.length ?? 0) > 0 && (
+                        <button type="button" onClick={() => setViewingLog(c)} className={`mt-1 inline-flex items-center gap-1 text-xs ${sus > 0 ? "text-warning" : "text-muted-foreground"} hover:underline`}>
+                          <Eye className="h-3 w-3" /> Proctor log · {c.proctorLog!.length} events{sus > 0 ? ` · ${sus} flagged` : ""}
+                        </button>
+                      )}
+                    </div>
+                    <Badge variant="outline" className={
+                      c.status === "approved" ? "border-success/40 text-success bg-success/10"
+                      : c.status === "rejected" ? "border-destructive/40 text-destructive bg-destructive/10"
+                      : "border-warning/40 text-warning bg-warning/10"
+                    }>
+                      {c.status}
+                    </Badge>
+                    <Badge variant="outline" className="border-border">{c.score}%</Badge>
+                    {c.status === "approved" && (
+                      <Button size="sm" variant="outline" onClick={() => handlePrint(c)}><Printer className="h-4 w-4 mr-1.5" />Print</Button>
                     )}
+                  </GlassCard>
+                );})}
+              </div>
+
+              {historyTotalPages > 1 && (
+                <div className="flex items-center justify-between pt-3 border-t border-border/60 text-xs text-muted-foreground">
+                  <span>Showing {((currentHistoryPage - 1) * ITEMS_PER_PAGE) + 1}–{Math.min(currentHistoryPage * ITEMS_PER_PAGE, myCerts.length)} of {myCerts.length} requests</span>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" variant="outline" disabled={currentHistoryPage === 1} onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} className="h-7 text-xs">Previous</Button>
+                    <span className="font-semibold text-foreground">Page {currentHistoryPage} of {historyTotalPages}</span>
+                    <Button size="sm" variant="outline" disabled={currentHistoryPage === historyTotalPages} onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))} className="h-7 text-xs">Next</Button>
                   </div>
-                  <Badge variant="outline" className={
-                    c.status === "approved" ? "border-success/40 text-success bg-success/10"
-                    : c.status === "rejected" ? "border-destructive/40 text-destructive bg-destructive/10"
-                    : "border-warning/40 text-warning bg-warning/10"
-                  }>
-                    {c.status}
-                  </Badge>
-                  <Badge variant="outline" className="border-border">{c.score}%</Badge>
-                  {c.status === "approved" && (
-                    <Button size="sm" variant="outline" onClick={() => handlePrint(c)}><Printer className="h-4 w-4 mr-1.5" />Print</Button>
-                  )}
-                </GlassCard>
-              );})}
+                </div>
+              )}
             </div>
           )}
         </TabsContent>

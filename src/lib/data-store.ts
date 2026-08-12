@@ -138,6 +138,44 @@ export function formatIdleDuration(user: User): string {
 let counter = 0;
 const uid = (p: string) => `${p}-${Date.now().toString(36)}-${(counter++).toString(36)}`;
 
+export function generateCertificateId(existingCerts: Certificate[]): string {
+  const year = new Date().getFullYear();
+  const prefix = `ITECH-${year}-`;
+  let maxSeq = 0;
+  for (const c of existingCerts ?? []) {
+    if (c && c.id && c.id.toUpperCase().startsWith(prefix)) {
+      const parts = c.id.toUpperCase().split("-");
+      if (parts.length >= 3) {
+        const num = parseInt(parts[2], 10);
+        if (!isNaN(num) && num > maxSeq) {
+          maxSeq = num;
+        }
+      }
+    }
+  }
+  const nextSeq = String(maxSeq + 1).padStart(4, "0");
+  return `${prefix}${nextSeq}`;
+}
+
+export function normalizeCertificateList(list: Certificate[]): Certificate[] {
+  let seq = 1;
+  const year = new Date().getFullYear();
+  const mapId = new Map<string, string>();
+
+  return (list || []).map((c) => {
+    if (!c || !c.id) return c;
+    const upperId = c.id.toUpperCase();
+    if (/^ITECH-\d{4}-\d{4}$/.test(upperId)) {
+      return { ...c, id: upperId };
+    }
+    if (!mapId.has(c.id)) {
+      const newId = `ITECH-${year}-${String(seq++).padStart(4, "0")}`;
+      mapId.set(c.id, newId);
+    }
+    return { ...c, id: mapId.get(c.id)! };
+  });
+}
+
 // Seed users = start with an empty user list; auth is handled through the backend.
 const seedUsers: User[] = [];
 
@@ -214,11 +252,15 @@ interface DataState {
   // submissions
   submitQuiz: (assessmentId: string, studentId: string, answers: Record<string, string>, proctorEvents?: ProctorEventRecord[]) => string;
   gradeSubmission: (submissionId: string, awards: Record<string, number>, feedback?: string) => void;
+  resetStudentSubmissions: (assessmentId: string, studentId: string) => Promise<void>;
+  extraAttempts: Record<string, number>;
+  grantExtraAttempt: (assessmentId: string, studentId: string, count?: number) => void;
 
   // certificates
   requestCertificate: (studentId: string, courseId: string, score: number, note?: string, proctorLog?: ProctorEventRecord[]) => void;
   approveCertificate: (id: string) => void;
   rejectCertificate: (id: string, reason?: string) => void;
+  issueCertificateDirectly: (studentId: string, courseId: string, score: number, note?: string) => string;
 
   // progress
   markItemComplete: (studentId: string, courseId: string, itemId: string) => void;
@@ -857,8 +899,24 @@ export const useData = create<DataState>()((set, get) => ({
         });
       },
 
+      extraAttempts: {},
+      grantExtraAttempt: (assessmentId, studentId, count = 1) => {
+        const key = `${studentId}:${assessmentId}`;
+        set((s) => ({
+          extraAttempts: {
+            ...s.extraAttempts,
+            [key]: (s.extraAttempts[key] ?? 0) + count,
+          },
+        }));
+        const student = get().users.find((u) => u.id === studentId);
+        const a = get().assessments.find((x) => x.id === assessmentId);
+        if (student && a) {
+          get().notify(studentId, "Extra Quiz Attempt Granted", `You have been granted +${count} extra attempt for "${a.title}".`);
+        }
+      },
+
       requestCertificate: (studentId, courseId, score, note, proctorLog) => {
-        const id = uid("itech");
+        const id = generateCertificateId(get().certificates);
         const cert: Certificate = {
           id, studentId, courseId, score,
           status: "pending",
@@ -952,6 +1010,34 @@ export const useData = create<DataState>()((set, get) => ({
             : s.notifications;
           return { certificates: updated, notifications: notes };
         }),
+      issueCertificateDirectly: (studentId, courseId, score, note) => {
+        const today = new Date().toISOString().slice(0, 10);
+        const id = generateCertificateId(get().certificates);
+        const cert: Certificate = {
+          id,
+          studentId,
+          courseId,
+          score,
+          status: "approved",
+          requestedAt: today,
+          issuedAt: today,
+          teacherNote: note || "Issued by Administrator",
+        };
+        (async () => {
+          try {
+            await fetch("/api/certificates", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(cert),
+            });
+          } catch (err) {
+            console.error("issueCertificateDirectly error", err);
+          }
+        })();
+        set((s) => ({ certificates: [cert, ...s.certificates] }));
+        get().notify(studentId, "Certificate Issued", `You have been issued a certificate. ID: ${id}`, "/student/certificates");
+        return id;
+      },
 
       markItemComplete: (studentId, courseId, itemId) => {
         (async () => {
@@ -1193,10 +1279,14 @@ export function submissionScore(a: StoreAssessment, sub: Submission): { earned: 
 }
 
 export function courseProgressPct(progress: Record<string, string[]>, studentId: string, course: Course): number {
-  const total = course.sections.reduce((n, s) => n + s.items.length, 0);
-  if (total === 0) return 0;
-  const done = (progress[`${studentId}:${course.id}`] ?? []).length;
-  return Math.min(100, Math.round((done / total) * 100));
+  const allItems = course.sections.flatMap((s) => s.items);
+  const lessonItems = allItems.filter((i) => i.type !== "assessment");
+  const targetItems = lessonItems.length > 0 ? lessonItems : allItems;
+  if (targetItems.length === 0) return 100;
+
+  const doneSet = new Set(progress[`${studentId}:${course.id}`] ?? []);
+  const completedCount = targetItems.filter((i) => doneSet.has(i.id)).length;
+  return Math.min(100, Math.round((completedCount / targetItems.length) * 100));
 }
 
 export function studentAccessFor(course: Course, studentId?: string): { accessMode: "lifetime" | "limited"; endDate?: string } {

@@ -46,8 +46,61 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
     setEvents((prev) => [...prev, { at: new Date().toISOString(), type, detail }]);
   }, []);
 
+  const requestFullscreen = useCallback(async () => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+    try {
+      const root = document.documentElement;
+      if (root.requestFullscreen) {
+        await root.requestFullscreen();
+      } else if ((root as any).webkitRequestFullscreen) {
+        await (root as any).webkitRequestFullscreen();
+      }
+      setFullscreenActive(true);
+      setFullscreenError(null);
+      log("fullscreen_enter");
+    } catch (e: any) {
+      setFullscreenActive(false);
+      setFullscreenError("Please click the Allow Fullscreen button below to grant permission.");
+      log("fullscreen_exit", "request_failed:" + (e?.message || "denied"));
+    }
+  }, [log]);
+
+  const requestCamera = useCallback(async () => {
+    if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
+    try {
+      setCameraError(null);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
+      }
+      setCameraReady(true);
+      log("camera_enabled");
+    } catch (e: any) {
+      setCameraReady(false);
+      setCameraError("Camera access required. Click Allow Camera below.");
+      log("camera_denied", e?.message);
+    }
+  }, [log]);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => {
+        t.stop();
+        t.enabled = false;
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    setCameraReady(false);
+  }, []);
+
   // Keep camera stream bound to video element as soon as it mounts in the DOM
   useEffect(() => {
+    if (typeof window === "undefined") return;
     if (cameraReady && streamRef.current && videoRef.current && videoRef.current.srcObject !== streamRef.current) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
@@ -56,26 +109,13 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
 
   // request fullscreen + camera + listeners
   useEffect(() => {
-    if (!enabled) return;
+    if (typeof window === "undefined" || typeof document === "undefined" || !enabled) {
+      stopCamera();
+      return;
+    }
     let cancelled = false;
 
-    const root = document.documentElement;
-    const enterFs = async () => {
-      try {
-        if (!document.fullscreenElement && root.requestFullscreen) {
-          await root.requestFullscreen();
-          setFullscreenActive(true);
-          setFullscreenError(null);
-          log("fullscreen_enter");
-        }
-      } catch (e: any) {
-        setFullscreenActive(false);
-        const message = e?.message ?? "Fullscreen denied";
-        setFullscreenError(message);
-        log("fullscreen_exit", "request_failed:" + message);
-      }
-    };
-    enterFs();
+    requestFullscreen();
     log("started");
 
     if (camera && navigator.mediaDevices?.getUserMedia) {
@@ -107,95 +147,110 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
             const lastFrame = motionFrameRef.current;
             const len = frame.data.length;
 
-            // Simple skin pixel heuristic to check for face presence
             let skinPixels = 0;
+            let brightPixels = 0; // Phone/screen glare detection
+
             for (let i = 0; i < len; i += 4) {
               const r = frame.data[i];
               const g = frame.data[i + 1];
               const b = frame.data[i + 2];
-              if (
-                r > 95 &&
-                g > 40 &&
-                b > 20 &&
-                r > g &&
-                r > b &&
-                Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
-                Math.abs(r - g) > 15
-              ) {
+              
+              if (r > 90 && g > 35 && b > 15 && r > g && r > b && Math.abs(r - g) > 12) {
                 skinPixels++;
+              }
+              if (r > 225 && g > 225 && b > 225) {
+                brightPixels++;
               }
             }
 
-            const skinRatio = skinPixels / (canvas.width * canvas.height);
             const now = Date.now();
 
-            if (skinRatio < 0.02 && now - lastFaceCheckAtRef.current > 10000) {
+            if (brightPixels > 2500 && now - lastMotionAtRef.current > 8000) {
+              lastMotionAtRef.current = now;
+              log("camera_motion", "High brightness glare detected (Potential phone/device)");
+            }
+
+            if (skinPixels > 20000 && now - lastFaceCheckAtRef.current > 12000) {
               lastFaceCheckAtRef.current = now;
-              log("camera_motion", "Face not detected in frame");
-            } else if (skinRatio > 0.55 && now - lastFaceCheckAtRef.current > 10000) {
+              log("multiple_faces", "Multiple faces or extra person detected");
+            }
+            else if (skinPixels < 1200 && now - lastFaceCheckAtRef.current > 12000) {
               lastFaceCheckAtRef.current = now;
-              log("multiple_faces", "Possible multiple faces detected");
+              log("camera_motion", "Face absent or student turned away from camera");
             }
 
             if (lastFrame) {
               let diff = 0;
-              for (let i = 0; i < len; i += 4) {
+              for (let i = 0; i < len; i += 8) {
                 diff += Math.abs(frame.data[i] - lastFrame.data[i]);
-                diff += Math.abs(frame.data[i + 1] - lastFrame.data[i + 1]);
-                diff += Math.abs(frame.data[i + 2] - lastFrame.data[i + 2]);
               }
-              const avg = diff / (canvas.width * canvas.height * 3);
-              if (avg > 10 && now - lastMotionAtRef.current > 5000) {
+              const avg = diff / (len / 8);
+              if (avg > 14 && now - lastMotionAtRef.current > 6000) {
                 lastMotionAtRef.current = now;
-                log("camera_motion", `movement:${Math.round(avg)}`);
+                log("camera_motion", `Head movement / position shift (avg_${Math.round(avg)})`);
               }
             }
             motionFrameRef.current = frame;
           };
 
-          motionTimerRef.current = window.setInterval(sampleMotion, 1200);
+          motionTimerRef.current = window.setInterval(sampleMotion, 1000);
         })
-        .catch((e) => {
-          setCameraError(e?.message ?? "Camera denied");
-          log("camera_denied", e?.message);
+        .catch((err) => {
+          if (!cancelled) {
+            setCameraReady(false);
+            setCameraError(err.message || "Camera access denied");
+            log("camera_denied", err.message);
+          }
         });
     }
 
+    const onFs = () => {
+      const isFs = Boolean(document.fullscreenElement);
+      setFullscreenActive(isFs);
+      if (!isFs) {
+        log("fullscreen_exit");
+        if (enabled) {
+          setTimeout(() => {
+            requestFullscreen().catch(() => {});
+          }, 300);
+        }
+      } else {
+        log("fullscreen_enter");
+      }
+    };
+
+    const onBlur = () => log("tab_blur");
+    const onFocus = () => log("tab_focus");
     const onVis = () => {
       if (document.hidden) log("visibility_hidden");
       else log("visibility_visible");
     };
-    const onBlur = () => log("tab_blur");
-    const onFocus = () => log("tab_focus");
-    const onFs = () => {
-      if (document.fullscreenElement) {
-        setFullscreenActive(true);
-      } else {
-        setFullscreenActive(false);
-        log("fullscreen_exit");
-        setTimeout(() => {
-          root.requestFullscreen?.().catch((err) => {
-            setFullscreenError(err?.message ?? "Fullscreen denied");
-          });
-        }, 100);
-      }
+    const onCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      log("copy");
     };
-    const onCopy = () => log("copy");
-    const onPaste = () => log("paste");
+    const onPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      log("paste");
+    };
     const onCtx = (e: MouseEvent) => {
       e.preventDefault();
       log("context_menu");
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) {
-        if (["c", "v", "x", "p", "u", "s", "Tab"].includes(e.key)) log("key_meta", e.key);
+      if (
+        e.key === "Meta" ||
+        e.key === "Alt" ||
+        (e.ctrlKey && (e.key === "c" || e.key === "v" || e.key === "tab" || e.key === "w" || e.key === "n" || e.key === "p" || e.key === "s"))
+      ) {
+        log("key_meta", e.key);
       }
     };
 
-    document.addEventListener("visibilitychange", onVis);
+    document.addEventListener("fullscreenchange", onFs);
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
-    document.addEventListener("fullscreenchange", onFs);
+    document.addEventListener("visibilitychange", onVis);
     document.addEventListener("copy", onCopy);
     document.addEventListener("paste", onPaste);
     document.addEventListener("contextmenu", onCtx);
@@ -203,10 +258,10 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
 
     return () => {
       cancelled = true;
-      document.removeEventListener("visibilitychange", onVis);
+      document.removeEventListener("fullscreenchange", onFs);
       window.removeEventListener("blur", onBlur);
       window.removeEventListener("focus", onFocus);
-      document.removeEventListener("fullscreenchange", onFs);
+      document.removeEventListener("visibilitychange", onVis);
       document.removeEventListener("copy", onCopy);
       document.removeEventListener("paste", onPaste);
       document.removeEventListener("contextmenu", onCtx);
@@ -216,13 +271,23 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
         motionTimerRef.current = null;
       }
       motionFrameRef.current = null;
-      streamRef.current?.getTracks().forEach((t) => t.stop());
-      streamRef.current = null;
+      stopCamera();
       if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     };
-  }, [enabled, camera, log]);
+  }, [enabled, camera, log, requestFullscreen, stopCamera]);
 
-  return { events, log, videoRef, cameraReady, cameraError, fullscreenActive, fullscreenError };
+  return {
+    events,
+    log,
+    videoRef,
+    cameraReady,
+    cameraError,
+    fullscreenActive,
+    fullscreenError,
+    requestFullscreen,
+    requestCamera,
+    stopCamera,
+  };
 }
 
 export function summarizeEvents(events: ProctorEvent[]) {

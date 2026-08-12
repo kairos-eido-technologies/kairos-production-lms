@@ -23,7 +23,7 @@ function StudentCourses() {
     if (!user) return [];
     const query = q.trim().toLowerCase();
     return courses
-      .filter((c) => c.studentIds.includes(user.id))
+      .filter((c) => c.studentIds.includes(user.id) || (user.role !== "student" && (user.role === "admin" || c.teacherId === user.id)))
       .filter((c) => !query || c.name.toLowerCase().includes(query) || c.code.toLowerCase().includes(query));
   }, [courses, user, q]);
 

@@ -57,17 +57,23 @@ function VerifyPage() {
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className={`mt-6 rounded-2xl border p-6 ${result.ok ? "border-success/40 bg-success/10" : "border-destructive/40 bg-destructive/10"}`}>
             {result.ok && result.cert ? (
-              <div className="space-y-3">
+              <div className="space-y-4">
                 <div className="flex items-center gap-2 text-success">
                   <CheckCircle2 className="h-6 w-6" />
-                  <span className="font-semibold">Verified by iTech Academy</span>
+                  <span className="font-semibold text-base">Verified Authentic Certificate</span>
                 </div>
-                <div className="grid grid-cols-2 gap-4 pt-2">
-                  <Info label="Student" value={users.find((u) => u.id === result.cert!.studentId)?.name ?? "—"} />
-                  <Info label="Course" value={courses.find((c) => c.id === result.cert!.courseId)?.name ?? "—"} />
-                  <Info label="Issued" value={result.cert.issuedAt ?? "—"} />
-                  <Info label="Score" value={`${result.cert.score}%`} />
-                  <Info label="Certificate ID" value={result.cert.id} className="col-span-2 font-mono" />
+                <div className="p-4 rounded-xl bg-background/60 border border-success/30 space-y-3">
+                  <div>
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Student Name</div>
+                    <div className="text-xl font-bold text-foreground">{users.find((u) => u.id === result.cert!.studentId)?.name ?? "—"}</div>
+                    <div className="text-xs text-muted-foreground">{users.find((u) => u.id === result.cert!.studentId)?.email ?? ""}</div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
+                    <Info label="Course" value={courses.find((c) => c.id === result.cert!.courseId)?.name ?? "—"} />
+                    <Info label="Final Score" value={`${result.cert.score}%`} />
+                    <Info label="Issued Date" value={result.cert.issuedAt ?? "—"} />
+                    <Info label="Certificate ID" value={result.cert.id} className="font-mono font-bold text-primary" />
+                  </div>
                 </div>
               </div>
             ) : (

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Plus, Pencil, Trash2, ClipboardCheck, ArrowLeft, ShieldCheck, Clock, ListChecks,
-  CheckCircle2, CircleDot, FileText, GraduationCap, AlertCircle, Upload, Download, Copy, Check, Loader2,
+  CheckCircle2, CircleDot, FileText, GraduationCap, AlertCircle, Upload, Download, Copy, Check, Loader2, RotateCcw,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { PageHeader, GlassCard, StatCard } from "@/components/ui-kit";
@@ -483,7 +483,7 @@ function AssessmentEditor({ assessment, onBack, courseName, initialTab }: { asse
 
 // ---------------- Grading ----------------
 function GradingPanel({ assessment }: { assessment: StoreAssessment }) {
-  const { submissions, users, gradeSubmission } = useData();
+  const { submissions, users, gradeSubmission, resetStudentSubmissions, grantExtraAttempt } = useData();
   const subs = submissions.filter((s) => s.assessmentId === assessment.id);
   const [active, setActive] = useState<Submission | null>(null);
 
@@ -518,6 +518,30 @@ function GradingPanel({ assessment }: { assessment: StoreAssessment }) {
               className={sub.status === "graded" ? "" : "gradient-primary text-primary-foreground border-0"}
               onClick={() => setActive(sub)}>
               {sub.status === "graded" ? "Review" : "Grade"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-emerald-500/40 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 text-xs gap-1 cursor-pointer"
+              onClick={() => {
+                grantExtraAttempt(assessment.id, sub.studentId, 1);
+                toast.success(`Granted +1 extra attempt to ${studentName(sub.studentId)}.`);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" /> +1 Attempt
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-amber-500/40 text-amber-500 hover:bg-amber-500/10 text-xs gap-1.5 cursor-pointer"
+              onClick={async () => {
+                if (confirm(`Reset quiz attempt submissions for ${studentName(sub.studentId)} so they can take the test again?`)) {
+                  await resetStudentSubmissions(assessment.id, sub.studentId);
+                  toast.success(`Attempts reset! ${studentName(sub.studentId)} can now retake this test.`);
+                }
+              }}
+            >
+              <RotateCcw className="h-3.5 w-3.5" /> Reset Retest
             </Button>
           </GlassCard>
         );
