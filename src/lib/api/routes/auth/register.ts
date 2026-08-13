@@ -1,12 +1,8 @@
-import { getDb } from "../../../db/client";
-import { users } from "../../../db/schema";
 import { hashPassword, generateToken } from "../../../auth";
-import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
 import { randomUUID } from "crypto";
 import { serverStore } from "../../../db/server-store";
 import { supabase } from "../../../db/supabase-client";
-
 
 export async function registerRoute(request: Request): Promise<Response> {
   try {
@@ -47,9 +43,7 @@ export async function registerRoute(request: Request): Promise<Response> {
       if (sUser) {
         existingUser = sUser;
       }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase check existing user warning:", sErr);
-    }
+    } catch (sErr) {}
 
     if (!existingUser) {
       existingUser = serverStore.getUserByEmail(emailLower);
@@ -83,7 +77,7 @@ export async function registerRoute(request: Request): Promise<Response> {
       phone: phone || null,
     };
 
-    // 1. Sync to Supabase REST API (Primary persistent store)
+    // 1. Sync to Supabase REST API (Primary persistent store over Port 443)
     try {
       const { data: insertedSupabase } = await supabase.from("users").upsert({
         id: newUserId,
@@ -107,11 +101,9 @@ export async function registerRoute(request: Request): Promise<Response> {
           emailVerificationCode: insertedSupabase.email_verification_code || verificationCode,
         };
       }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase HTTPS sync warning:", sErr);
-    }
+    } catch (sErr) {}
 
-    // 3. Sync to serverStore memory cache
+    // 2. Sync to serverStore memory cache
     serverStore.saveUser({
       id: createdUserRecord.id,
       name: createdUserRecord.name,
@@ -125,7 +117,7 @@ export async function registerRoute(request: Request): Promise<Response> {
       phone: createdUserRecord.phone || null,
     });
 
-    // Send the real verification email
+    // Send verification email
     await sendVerificationEmail(emailLower, verificationCode, name.trim());
 
     const token = generateToken({

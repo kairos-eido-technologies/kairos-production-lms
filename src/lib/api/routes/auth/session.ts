@@ -1,8 +1,6 @@
-import { getDb, isDatabaseHealthy, markDbUnhealthy, markDbHealthy } from "../../../db/client";
-import { users } from "../../../db/schema";
 import { verifyToken } from "../../../auth";
-import { eq } from "drizzle-orm";
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 function getTokenFromCookie(request: Request): string | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -29,9 +27,8 @@ export async function sessionRoute(request: Request): Promise<Response> {
 
   let user: any = null;
 
-  // 1. Primary source: Supabase REST API
+  // 1. Primary source: Supabase REST API (Port 443)
   try {
-    const { supabase } = await import("../../../db/supabase-client");
     const { data: sUser } = await supabase
       .from("users")
       .select("*")
@@ -58,14 +55,12 @@ export async function sessionRoute(request: Request): Promise<Response> {
         phone: sUser.phone,
       });
 
-      // Update last_active in Supabase
+      // Update last_active in Supabase REST asynchronously
       supabase.from("users").update({ last_active: new Date().toISOString() }).eq("id", sUser.id).then();
     }
-  } catch (sErr) {
-    console.warn("⚠️ Supabase session query warning:", sErr);
-  }
+  } catch (sErr) {}
 
-  // Fallback 2: try serverStore for ANY user when DB and Supabase fail
+  // Fallback 2: try serverStore for ANY user when Supabase REST is slow
   if (!user) {
     const storeUser =
       serverStore.getUserById(payload.userId) ||

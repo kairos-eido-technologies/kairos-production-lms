@@ -59,18 +59,16 @@ async function insertNotification(db: any, userId: string, title: string, messag
   };
   serverStore.addNotification(notifObj);
   try {
-    await db.insert(notifications).values({
+    await supabase.from("notifications").insert({
       id,
-      userId,
+      user_id: userId,
       title,
       message,
       read: false,
       link: link || null,
-      createdAt: new Date(),
+      created_at: notifObj.createdAt,
     });
-  } catch (err) {
-    console.warn("⚠️ insertNotification DB warning:", err);
-  }
+  } catch (err) {}
 }
 
 async function insertMessage(db: any, fromId: string, toId: string, subject: string, body: string) {
@@ -86,18 +84,16 @@ async function insertMessage(db: any, fromId: string, toId: string, subject: str
   };
   serverStore.addMessage(msgObj);
   try {
-    await db.insert(messages).values({
+    await supabase.from("messages").insert({
       id,
-      fromId,
-      toId,
+      from_id: fromId,
+      to_id: toId,
       subject,
       body,
       read: false,
-      createdAt: new Date(),
+      created_at: msgObj.createdAt,
     });
-  } catch (err) {
-    console.warn("⚠️ insertMessage DB warning:", err);
-  }
+  } catch (err) {}
 }
 
 async function generateUniqueRoleId(role: "admin" | "teacher" | "student"): Promise<string> {
@@ -231,44 +227,7 @@ export async function contentRoute(request: Request): Promise<Response> {
         console.warn("⚠️ Supabase GET /api/users warning:", sErr);
       }
 
-      // Secondary check: Drizzle DB if Supabase had no results
-      if (mapped.length === 0 && isDatabaseHealthy()) {
-        try {
-          const allUsers = await db.select().from(users);
-          const allEnrollments = await db.select().from(enrollments);
-
-          const enrollmentsMap = new Map<string, string[]>();
-          for (const e of allEnrollments) {
-            const list = enrollmentsMap.get(e.studentId) || [];
-            list.push(e.courseId);
-            enrollmentsMap.set(e.studentId, list);
-          }
-
-          mapped = allUsers.map((u) => {
-            const item = {
-              id: u.id,
-              name: u.name,
-              email: u.email,
-              role: u.role,
-              status: u.status,
-              joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
-              lastActive: u.lastActive ? u.lastActive.toISOString() : null,
-              avatar: u.avatar,
-              phone: u.phone,
-              group: u.group || undefined,
-              isEmailVerified: u.isEmailVerified,
-              courseIds: enrollmentsMap.get(u.id) || [],
-            };
-            serverStore.saveUser(item as any);
-            return item;
-          });
-          markDbHealthy();
-        } catch (dbErr) {
-          markDbUnhealthy();
-        }
-      }
-
-      // Merge storeUsers if any in-memory user isn't in mapped list yet
+      // Merge storeUsers to ensure any locally registered/verified user is displayed
       const storeUsers = serverStore.getAllUsers();
       for (const su of storeUsers) {
         if (!mapped.some((m) => m.id === su.id || m.email.toLowerCase() === su.email.toLowerCase())) {
@@ -573,27 +532,69 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
       const isAuthenticated = token ? !!verifyToken(token) : false;
 
-      let allCourses: any[] = [];
-      let allSections: any[] = [];
-      let allItems: any[] = [];
-      let allEnrollments: any[] = [];
-
-      if (!isDatabaseHealthy()) {
-        const cached = serverStore.getCourses();
-        return new Response(JSON.stringify({ courses: cached }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
-
       try {
-        allCourses = await db.select().from(courses);
-        allSections = await db.select().from(sections);
-        allItems = await db.select().from(contentItems);
-        allEnrollments = await db.select().from(enrollments);
-        markDbHealthy();
-      } catch (dbError: any) {
-        markDbUnhealthy();
+        const { data: sCourses } = await supabase.from("courses").select("*");
+        const { data: sSections } = await supabase.from("sections").select("*");
+        const { data: sItems } = await supabase.from("content_items").select("*");
+        const { data: sEnrollments } = await supabase.from("enrollments").select("*");
+
+        if (sCourses && sCourses.length > 0) {
+          allCourses = sCourses.map((c: any) => ({
+            id: c.id,
+            code: c.code,
+            name: c.name,
+            description: c.description,
+            category: c.category,
+            level: c.level,
+            duration: c.duration,
+            thumbnail: c.thumbnail,
+            teacherId: c.teacher_id || c.teacherId,
+            prerequisiteId: c.prerequisite_id || c.prerequisiteId,
+            status: c.status || "active",
+            showInPreview: c.show_in_preview ?? c.showInPreview ?? true,
+            previewVideoUrl: c.preview_video_url || c.previewVideoUrl,
+            startDate: c.start_date || c.startDate,
+            endDate: c.end_date || c.endDate,
+          }));
+        }
+
+        if (sSections) {
+          allSections = sSections.map((s: any) => ({
+            id: s.id,
+            courseId: s.course_id || s.courseId,
+            title: s.title,
+            order: s.order ?? 0,
+          }));
+        }
+
+        if (sItems) {
+          allItems = sItems.map((it: any) => ({
+            id: it.id,
+            sectionId: it.section_id || it.sectionId,
+            type: it.type,
+            title: it.title,
+            body: it.body,
+            url: it.url,
+            fileName: it.file_name || it.fileName,
+            duration: it.duration,
+            fileSize: it.file_size || it.fileSize,
+            assessmentId: it.assessment_id || it.assessmentId,
+            order: it.order ?? 0,
+          }));
+        }
+
+        if (sEnrollments) {
+          allEnrollments = sEnrollments.map((e: any) => ({
+            id: e.id,
+            studentId: e.student_id || e.studentId,
+            courseId: e.course_id || e.courseId,
+            accessMode: e.access_mode || e.accessMode || "lifetime",
+            endDate: e.end_date || e.endDate,
+          }));
+        }
+      } catch (sErr) {}
+
+      if (allCourses.length === 0) {
         const cached = serverStore.getCourses();
         return new Response(JSON.stringify({ courses: cached }), {
           status: 200,
@@ -1080,30 +1081,28 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/certificates") {
       const status = url.searchParams.get("status");
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getCertificates();
-        if (status) mapped = mapped.filter((c) => c.status === status);
-        return new Response(JSON.stringify({ certificates: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const rows = status
-          ? await db.query.certificates.findMany({ where: eq(certificates.status, status) })
-          : await db.select().from(certificates);
+        let query = supabase.from("certificates").select("*");
+        if (status) query = query.eq("status", status);
+        const { data: sCerts } = await query;
 
-        mapped = rows.map((c) => ({
-          ...c,
-          requestedAt: c.requestedAt.toISOString().slice(0, 10),
-          issuedAt: c.issuedAt ? c.issuedAt.toISOString().slice(0, 10) : undefined,
-          proctorLog: (c.proctorLog as any[]) ?? undefined,
-        }));
-        serverStore.setCertificates(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        if (sCerts && sCerts.length > 0) {
+          mapped = sCerts.map((c: any) => ({
+            id: c.id,
+            studentId: c.student_id || c.studentId,
+            courseId: c.course_id || c.courseId,
+            requestedAt: c.requested_at ? c.requested_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            status: c.status,
+            issuedAt: c.issued_at ? c.issued_at.slice(0, 10) : undefined,
+            rejectionReason: c.rejection_reason || c.rejectionReason || undefined,
+            proctorLog: (c.proctor_log || c.proctorLog) ?? undefined,
+          }));
+          serverStore.setCertificates(mapped);
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getCertificates();
         if (status) mapped = mapped.filter((c) => c.status === status);
       }
@@ -1254,50 +1253,46 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/assessments -> list all assessments and nested questions
     if (request.method === "GET" && path === "/api/assessments") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getAssessments();
-        return new Response(JSON.stringify({ assessments: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allAssessments = await db.select().from(assessments);
-        const allQuestions = await db.select().from(questions);
+        const { data: sAssessments } = await supabase.from("assessments").select("*");
+        const { data: sQuestions } = await supabase.from("questions").select("*");
 
-        // Pre-build O(1) Map index for questions
-        const questionsMap = new Map<string, any[]>();
-        for (const q of allQuestions) {
-          const list = questionsMap.get(q.assessmentId) || [];
-          list.push({
-            id: q.id,
-            text: q.text,
-            type: q.type,
-            options: (q.options as string[]) ?? undefined,
-            correctAnswer: q.correctAnswer ?? undefined,
-            points: q.points,
-          });
-          questionsMap.set(q.assessmentId, list);
+        if (sAssessments && sAssessments.length > 0) {
+          const questionsMap = new Map<string, any[]>();
+          if (sQuestions) {
+            for (const q of sQuestions) {
+              const aId = q.assessment_id || q.assessmentId;
+              const list = questionsMap.get(aId) || [];
+              list.push({
+                id: q.id,
+                text: q.text,
+                type: q.type,
+                options: (q.options as string[]) ?? undefined,
+                correctAnswer: (q.correct_answer || q.correctAnswer) ?? undefined,
+                points: q.points,
+              });
+              questionsMap.set(aId, list);
+            }
+          }
+
+          mapped = sAssessments.map((a: any) => ({
+            id: a.id,
+            courseId: a.course_id || a.courseId,
+            title: a.title,
+            description: a.description || undefined,
+            duration: a.duration,
+            attempts: a.attempts,
+            passingScore: a.passing_score || a.passingScore,
+            dueDate: a.due_date ? a.due_date.slice(0, 10) : undefined,
+            isFinal: a.is_final ?? a.isFinal,
+            questions: questionsMap.get(a.id) || [],
+          }));
+          serverStore.setAssessments(mapped);
         }
+      } catch (sErr) {}
 
-        mapped = allAssessments.map((a) => ({
-          id: a.id,
-          courseId: a.courseId,
-          title: a.title,
-          description: a.description || undefined,
-          duration: a.duration,
-          attempts: a.attempts,
-          passingScore: a.passingScore,
-          dueDate: a.dueDate ? a.dueDate.toISOString().slice(0, 10) : undefined,
-          isFinal: a.isFinal,
-          questions: questionsMap.get(a.id) || [],
-        }));
-        // Cache in serverStore for fallback
-        serverStore.setAssessments(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+      if (mapped.length === 0) {
         mapped = serverStore.getAssessments();
       }
 
@@ -1497,59 +1492,45 @@ export async function contentRoute(request: Request): Promise<Response> {
       const assessmentId = url.searchParams.get("assessmentId");
 
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getSubmissions();
-        if (studentId) mapped = mapped.filter((s) => s.studentId === studentId);
-        if (assessmentId) mapped = mapped.filter((s) => s.assessmentId === assessmentId);
-        return new Response(JSON.stringify({ submissions: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        let allSubmissions;
-        if (studentId && assessmentId) {
-          allSubmissions = await db
-            .select()
-            .from(submissions)
-            .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
-        } else if (studentId) {
-          allSubmissions = await db.select().from(submissions).where(eq(submissions.studentId, studentId));
-        } else if (assessmentId) {
-          allSubmissions = await db.select().from(submissions).where(eq(submissions.assessmentId, assessmentId));
-        } else {
-          allSubmissions = await db.select().from(submissions);
+        let query = supabase.from("submissions").select("*");
+        if (studentId) query = query.eq("student_id", studentId);
+        if (assessmentId) query = query.eq("assessment_id", assessmentId);
+
+        const { data: sSubmissions } = await query;
+        const { data: sResponses } = await supabase.from("submission_responses").select("*");
+
+        if (sSubmissions && sSubmissions.length > 0) {
+          const responsesMap = new Map<string, any[]>();
+          if (sResponses) {
+            for (const r of sResponses) {
+              const subId = r.submission_id || r.submissionId;
+              const list = responsesMap.get(subId) || [];
+              list.push({
+                questionId: r.question_id || r.questionId,
+                response: r.response,
+                awarded: r.awarded,
+              });
+              responsesMap.set(subId, list);
+            }
+          }
+
+          mapped = sSubmissions.map((s: any) => ({
+            id: s.id,
+            assessmentId: s.assessment_id || s.assessmentId,
+            studentId: s.student_id || s.studentId,
+            attemptNumber: s.attempt_number || s.attemptNumber || 1,
+            score: s.score,
+            status: s.status,
+            submittedAt: s.submitted_at ? s.submitted_at.slice(0, 10) : "",
+            responses: responsesMap.get(s.id) || [],
+          }));
+          serverStore.setSubmissions(mapped);
         }
+      } catch (sErr) {}
 
-        const allResponses = await db.select().from(submissionResponses);
-
-        // Pre-build O(1) Map index for responses
-        const responsesMap = new Map<string, any[]>();
-        for (const r of allResponses) {
-          const list = responsesMap.get(r.submissionId) || [];
-          list.push({
-            questionId: r.questionId,
-            response: r.response,
-            awarded: r.awarded,
-          });
-          responsesMap.set(r.submissionId, list);
-        }
-
-        mapped = allSubmissions.map((s) => ({
-          id: s.id,
-          assessmentId: s.assessmentId,
-          studentId: s.studentId,
-          attemptNumber: s.attemptNumber,
-          score: s.score,
-          status: s.status,
-          submittedAt: s.submittedAt ? s.submittedAt.toISOString().slice(0, 10) : "",
-          responses: responsesMap.get(s.id) || [],
-        }));
-        serverStore.setSubmissions(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+      if (mapped.length === 0) {
         mapped = serverStore.getSubmissions();
         if (studentId) mapped = mapped.filter((s) => s.studentId === studentId);
         if (assessmentId) mapped = mapped.filter((s) => s.assessmentId === assessmentId);
@@ -1712,26 +1693,22 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/progress -> list all progress entries
     if (request.method === "GET" && path === "/api/progress") {
       let progressRecord: Record<string, string[]> = {};
-      if (!isDatabaseHealthy()) {
-        return new Response(JSON.stringify({ progress: progressRecord }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allProgress = await db.select().from(progress);
-        for (const p of allProgress) {
-          const key = `${p.studentId}:${p.courseId}`;
-          if (!progressRecord[key]) progressRecord[key] = [];
-          if (!progressRecord[key].includes(p.contentItemId)) {
-            progressRecord[key].push(p.contentItemId);
+        const { data: sProgress } = await supabase.from("progress").select("*");
+        if (sProgress) {
+          for (const p of sProgress) {
+            const sId = p.student_id || p.studentId;
+            const cId = p.course_id || p.courseId;
+            const itemKey = p.content_item_id || p.contentItemId;
+            const key = `${sId}:${cId}`;
+            if (!progressRecord[key]) progressRecord[key] = [];
+            if (!progressRecord[key].includes(itemKey)) {
+              progressRecord[key].push(itemKey);
+            }
           }
         }
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
-      }
+      } catch (sErr) {}
 
       return new Response(JSON.stringify({ progress: progressRecord }), {
         status: 200,
@@ -1802,32 +1779,27 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/notifications -> list all notifications
     if (request.method === "GET" && path === "/api/notifications") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getNotifications();
-        return new Response(JSON.stringify({ notifications: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allNotifs = await db.select().from(notifications);
-        mapped = allNotifs.map((n) => {
-          const item = {
-            id: n.id,
-            userId: n.userId,
-            title: n.title,
-            message: n.message,
-            read: n.read,
-            link: n.link ?? undefined,
-            createdAt: n.createdAt.toISOString(),
-          };
-          serverStore.addNotification(item);
-          return item;
-        });
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        const { data: sNotifs } = await supabase.from("notifications").select("*");
+        if (sNotifs && sNotifs.length > 0) {
+          mapped = sNotifs.map((n: any) => {
+            const item = {
+              id: n.id,
+              userId: n.user_id || n.userId,
+              title: n.title,
+              message: n.message,
+              read: n.read,
+              link: n.link ?? undefined,
+              createdAt: n.created_at ? new Date(n.created_at).toISOString() : new Date().toISOString(),
+            };
+            serverStore.addNotification(item);
+            return item;
+          });
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getNotifications();
       }
 
@@ -1899,33 +1871,25 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/messages -> list all messages
     if (request.method === "GET" && path === "/api/messages") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getMessages();
-        return new Response(JSON.stringify({ messages: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allMsgs = await db.select().from(messages);
-        mapped = allMsgs.map((m) => {
-          const item = {
-            id: m.id,
-            fromId: m.fromId,
-            toId: m.toId,
-            subject: m.subject,
-            body: m.body,
-            read: m.read,
-            createdAt: m.createdAt.toISOString(),
-          };
-          serverStore.addMessage(item);
-          return item;
-        });
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
-      }
+        const { data: sMsgs } = await supabase.from("messages").select("*");
+        if (sMsgs && sMsgs.length > 0) {
+          mapped = sMsgs.map((m: any) => {
+            const item = {
+              id: m.id,
+              fromId: m.from_id || m.fromId,
+              toId: m.to_id || m.toId,
+              subject: m.subject,
+              body: m.body,
+              read: m.read,
+              createdAt: m.created_at ? new Date(m.created_at).toISOString() : new Date().toISOString(),
+            };
+            serverStore.addMessage(item);
+            return item;
+          });
+        }
+      } catch (sErr) {}
 
       const storeMsgs = serverStore.getMessages();
       for (const sm of storeMsgs) {
@@ -2015,28 +1979,23 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/events -> list all events
     if (request.method === "GET" && path === "/api/events") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getEvents();
-        return new Response(JSON.stringify({ events: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allEvents = await db.select().from(events);
-        mapped = allEvents.map((e) => ({
-          id: e.id,
-          courseId: e.courseId || null,
-          title: e.title,
-          description: e.description || null,
-          eventDate: e.eventDate ? e.eventDate.toISOString() : new Date().toISOString(),
-          createdAt: e.createdAt ? e.createdAt.toISOString() : new Date().toISOString(),
-        }));
-        serverStore.setEvents(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        const { data: sEvents } = await supabase.from("events").select("*");
+        if (sEvents && sEvents.length > 0) {
+          mapped = sEvents.map((e: any) => ({
+            id: e.id,
+            courseId: e.course_id || e.courseId || null,
+            title: e.title,
+            description: e.description || null,
+            eventDate: e.event_date ? new Date(e.event_date).toISOString() : new Date().toISOString(),
+            createdAt: e.created_at ? new Date(e.created_at).toISOString() : new Date().toISOString(),
+          }));
+          serverStore.setEvents(mapped);
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getEvents();
       }
 
@@ -2119,28 +2078,23 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/announcements -> list all announcements
     if (request.method === "GET" && path === "/api/announcements") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getAnnouncements();
-        return new Response(JSON.stringify({ announcements: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allAnnouncements = await db.select().from(announcements);
-        mapped = allAnnouncements.map((a) => ({
-          id: a.id,
-          courseId: a.courseId,
-          title: a.title,
-          body: a.body,
-          isPinned: a.isPinned,
-          createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString(),
-        }));
-        serverStore.setAnnouncements(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        const { data: sAnns } = await supabase.from("announcements").select("*");
+        if (sAnns && sAnns.length > 0) {
+          mapped = sAnns.map((a: any) => ({
+            id: a.id,
+            courseId: a.course_id || a.courseId,
+            title: a.title,
+            body: a.body,
+            isPinned: a.is_pinned ?? a.isPinned,
+            createdAt: a.created_at ? new Date(a.created_at).toISOString() : new Date().toISOString(),
+          }));
+          serverStore.setAnnouncements(mapped);
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getAnnouncements();
       }
 
@@ -2209,28 +2163,23 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/discussions -> list all discussions
     if (request.method === "GET" && path === "/api/discussions") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getDiscussions();
-        return new Response(JSON.stringify({ discussions: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allDiscussions = await db.select().from(discussions);
-        mapped = allDiscussions.map((d) => ({
-          id: d.id,
-          courseId: d.courseId,
-          userId: d.userId,
-          title: d.title,
-          body: d.body,
-          createdAt: d.createdAt ? d.createdAt.toISOString() : new Date().toISOString(),
-        }));
-        serverStore.setDiscussions(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        const { data: sDiscussions } = await supabase.from("discussions").select("*");
+        if (sDiscussions && sDiscussions.length > 0) {
+          mapped = sDiscussions.map((d: any) => ({
+            id: d.id,
+            courseId: d.course_id || d.courseId,
+            userId: d.user_id || d.userId,
+            title: d.title,
+            body: d.body,
+            createdAt: d.created_at ? new Date(d.created_at).toISOString() : new Date().toISOString(),
+          }));
+          serverStore.setDiscussions(mapped);
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getDiscussions();
       }
 
@@ -2278,27 +2227,22 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/discussion-replies -> list all replies
     if (request.method === "GET" && path === "/api/discussion-replies") {
       let mapped: any[] = [];
-      if (!isDatabaseHealthy()) {
-        mapped = serverStore.getDiscussionReplies();
-        return new Response(JSON.stringify({ discussionReplies: mapped }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        const allReplies = await db.select().from(discussionReplies);
-        mapped = allReplies.map((r) => ({
-          id: r.id,
-          discussionId: r.discussionId,
-          userId: r.userId,
-          body: r.body,
-          createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
-        }));
-        serverStore.setDiscussionReplies(mapped);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+        const { data: sReplies } = await supabase.from("discussion_replies").select("*");
+        if (sReplies && sReplies.length > 0) {
+          mapped = sReplies.map((r: any) => ({
+            id: r.id,
+            discussionId: r.discussion_id || r.discussionId,
+            userId: r.user_id || r.userId,
+            body: r.body,
+            createdAt: r.created_at ? new Date(r.created_at).toISOString() : new Date().toISOString(),
+          }));
+          serverStore.setDiscussionReplies(mapped);
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
         mapped = serverStore.getDiscussionReplies();
       }
 
@@ -2361,25 +2305,28 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/video-checkpoints") {
       const contentItemId = url.searchParams.get("contentItemId");
       let rows: any[] = [];
-      if (!isDatabaseHealthy()) {
-        rows = serverStore.getVideoCheckpoints();
-        if (contentItemId) rows = rows.filter((v) => v.contentItemId === contentItemId);
-        return new Response(JSON.stringify({ videoCheckpoints: rows }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        if (contentItemId) {
-          rows = await db.select().from(videoCheckpoints).where(eq(videoCheckpoints.contentItemId, contentItemId));
-        } else {
-          rows = await db.select().from(videoCheckpoints);
+        let query = supabase.from("video_checkpoints").select("*");
+        if (contentItemId) query = query.eq("content_item_id", contentItemId);
+        const { data: sCheckpoints } = await query;
+
+        if (sCheckpoints && sCheckpoints.length > 0) {
+          rows = sCheckpoints.map((v: any) => ({
+            id: v.id,
+            contentItemId: v.content_item_id || v.contentItemId,
+            timestamp: v.timestamp,
+            type: v.type,
+            prompt: v.prompt,
+            options: v.options,
+            correctIndex: v.correct_index ?? v.correctIndex,
+            correctText: v.correct_text || v.correctText,
+          }));
+          serverStore.setVideoCheckpoints(rows);
         }
-        serverStore.setVideoCheckpoints(rows);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+      } catch (sErr) {}
+
+      if (rows.length === 0) {
         rows = serverStore.getVideoCheckpoints();
         if (contentItemId) rows = rows.filter((v) => v.contentItemId === contentItemId);
       }
@@ -2445,25 +2392,25 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/checkpoint-progress") {
       const studentId = url.searchParams.get("studentId");
       let rows: any[] = [];
-      if (!isDatabaseHealthy()) {
-        rows = serverStore.getCheckpointProgress();
-        if (studentId) rows = rows.filter((c) => c.studentId === studentId);
-        return new Response(JSON.stringify({ checkpointProgress: rows }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       try {
-        if (studentId) {
-          rows = await db.select().from(checkpointProgress).where(eq(checkpointProgress.studentId, studentId));
-        } else {
-          rows = await db.select().from(checkpointProgress);
+        let query = supabase.from("checkpoint_progress").select("*");
+        if (studentId) query = query.eq("student_id", studentId);
+        const { data: sProgress } = await query;
+
+        if (sProgress && sProgress.length > 0) {
+          rows = sProgress.map((cp: any) => ({
+            id: cp.id,
+            studentId: cp.student_id || cp.studentId,
+            checkpointId: cp.checkpoint_id || cp.checkpointId,
+            isCorrect: cp.is_correct ?? cp.isCorrect,
+            answeredAt: cp.answered_at ? new Date(cp.answered_at).toISOString() : new Date().toISOString(),
+          }));
+          serverStore.setCheckpointProgress(rows);
         }
-        serverStore.setCheckpointProgress(rows);
-        markDbHealthy();
-      } catch (dbErr) {
-        markDbUnhealthy();
+      } catch (sErr) {}
+
+      if (rows.length === 0) {
         rows = serverStore.getCheckpointProgress();
         if (studentId) rows = rows.filter((c) => c.studentId === studentId);
       }
