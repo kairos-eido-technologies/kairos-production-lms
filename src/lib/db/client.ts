@@ -20,7 +20,7 @@ export function getDb() {
     );
   }
   if (!client) {
-    client = postgres(connectionString);
+    client = postgres(connectionString, { prepare: false, ssl: "require" });
   }
   return drizzle(client, { schema });
 }
