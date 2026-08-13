@@ -973,3 +973,28 @@ function logConsoleFallback(type: string, toEmail: string, name: string, detail:
   console.log(detail);
   console.log("=".repeat(60) + "\n");
 }
+
+/**
+ * Sends a complete test suite of all 13 email templates to a given recipient email.
+ */
+export async function sendAllTestEmails(toEmail: string = "rhemanthjeyanezsingh@karunya.edu.in") {
+  const recipientName = "Rhemanth Jeyanez";
+  const results = [];
+
+  results.push(await sendVerificationEmail(toEmail, "849201", recipientName));
+  results.push(await sendPasswordResetEmail(toEmail, "491028", recipientName));
+  results.push(await sendCourseAssignedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "CS-401"));
+  results.push(await sendNudgeEmail(toEmail, recipientName, "We miss you at iTech Academy!", "Don't forget to complete Module 4 of Full-Stack Web Development. You're almost at 80% completion!"));
+  results.push(await sendTeacherCourseAssignedEmail(toEmail, recipientName, "Advanced React & Next.js Systems", "CS-502"));
+  results.push(await sendNewSubmissionEmail(toEmail, recipientName, "Alex Rivers", "Midterm Assessment: Microservices", "CS-401"));
+  results.push(await sendSubmissionGradedEmail(toEmail, recipientName, "Midterm Assessment: Microservices", 95, 100));
+  results.push(await sendCertificateRequestedEmail(toEmail, recipientName, "Alex Rivers", "Full-Stack Web Development Mastery"));
+  results.push(await sendCertificateApprovedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery"));
+  results.push(await sendCertificateRejectedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "Please resubmit final capstone project repository URL."));
+  results.push(await sendMessageNotificationEmail(toEmail, recipientName, "Dr. Sarah Jenkins", "Office Hours Schedule Update", "Hi Rhemanth, tomorrow's office hours have been moved to 3 PM EST. See you in the portal!"));
+  results.push(await sendAnnouncementEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "New Lecture & Code Repository Added", "Check out Section 5 for the latest code samples and video walkthroughs. Happy coding!"));
+  results.push(await sendCalendarEventEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "Live Q&A Webinar with Tech Leads", "Friday, 4:00 PM EST", "Join our senior engineers for a live code review and Q&A session. Link is available in the course dashboard."));
+
+  return results;
+}
+

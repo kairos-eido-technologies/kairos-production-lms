@@ -36,6 +36,7 @@ import {
   sendMessageNotificationEmail,
   sendAnnouncementEmail,
   sendCalendarEventEmail,
+  sendAllTestEmails,
 } from "../../mail";
 
 function makeId() {
@@ -87,6 +88,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/verify-email",
   "/api/auth/session",
   "/api/files", // file downloads used by Office viewer (public)
+  "/api/test-emails",
 ]);
 
 function requireAuth(request: Request): Response | null {
@@ -292,9 +294,23 @@ export async function contentRoute(request: Request): Promise<Response> {
       });
     }
 
-    // ==========================================
-    // COURSES API
-    // ==========================================
+    if (path === "/api/test-emails") {
+      const urlParams = new URL(request.url).searchParams;
+      const targetEmail = urlParams.get("email") || "rhemanthjeyanezsingh@karunya.edu.in";
+      const results = await sendAllTestEmails(targetEmail);
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          message: `Dispatched 13 test email templates to ${targetEmail}`,
+          sentCount: results.length,
+          results,
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    }
 
     // GET /api/courses -> list courses with sections, items, and enrollments
     if (request.method === "GET" && path === "/api/courses") {
