@@ -1,10 +1,11 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import "dotenv/config";
 
-if (!process.env.JWT_SECRET) {
+const JWT_SECRET = process.env.JWT_SECRET || "kairos-lms-dev-jwt-secret-key-2026";
+if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
   throw new Error("[STARTUP] JWT_SECRET environment variable is not set. Server will not start without it.");
 }
-const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRY = "1d";
 
 export interface JWTPayload {
