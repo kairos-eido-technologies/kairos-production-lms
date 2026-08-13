@@ -3,9 +3,24 @@ import { files } from "../../db/schema";
 import { eq } from "drizzle-orm";
 import { promises as fs } from "fs";
 import path from "path";
+import os from "os";
 
 function makeId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`;
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+interface CachedFile {
+  id: string;
+  filename: string;
+  mime: string;
+  buffer: Buffer;
+}
+
+// Global server memory cache for uploaded files (PDFs, PPTs, images)
+const globalRef = globalThis as unknown as { __fileCache?: Map<string, CachedFile> };
+const fileCache = globalRef.__fileCache || new Map<string, CachedFile>();
+if (process.env.NODE_ENV !== "production") {
+  globalRef.__fileCache = fileCache;
 }
 
 export async function filesRoute(request: Request): Promise<Response> {
@@ -20,13 +35,11 @@ export async function filesRoute(request: Request): Promise<Response> {
 }
 
 async function uploadRoute(request: Request): Promise<Response> {
-  // Accept multipart/form-data with field 'file' and optional 'ownerId'
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("form-data") && !contentType.includes("multipart")) {
     return new Response(JSON.stringify({ error: "Content-Type must be multipart/form-data" }), { status: 400, headers: { "content-type": "application/json" } });
   }
 
-  // formData support in Node's Fetch
   const form = await request.formData();
   const fileField = form.get("file") as any;
   if (!fileField || typeof fileField.arrayBuffer !== "function") {
@@ -37,7 +50,6 @@ async function uploadRoute(request: Request): Promise<Response> {
   const filename = fileField.name || "upload.bin";
   const mime = fileField.type || "application/octet-stream";
 
-  // ── Security: reject files exceeding 50 MB ──────────────────────────────
   const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
   if (fileField.size && fileField.size > MAX_FILE_SIZE) {
     return new Response(
@@ -49,7 +61,6 @@ async function uploadRoute(request: Request): Promise<Response> {
   const arrayBuf = await fileField.arrayBuffer();
   const buffer = Buffer.from(arrayBuf);
 
-  // Double-check actual buffer size in case fileField.size was unavailable
   if (buffer.length > MAX_FILE_SIZE) {
     return new Response(
       JSON.stringify({ error: "File too large. Maximum allowed size is 50 MB." }),
@@ -57,23 +68,37 @@ async function uploadRoute(request: Request): Promise<Response> {
     );
   }
   const id = makeId();
-
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  await fs.mkdir(uploadsDir, { recursive: true });
   const storageKey = `${id}-${filename}`;
-  const filePath = path.join(uploadsDir, storageKey);
-  await fs.writeFile(filePath, buffer);
 
-  const db = getDb();
-  await db.insert(files).values({
-    id,
-    filename,
-    mime,
-    size: buffer.length,
-    ownerId,
-    storageType: "local",
-    storageKey,
-  });
+  // Store in memory cache
+  fileCache.set(id, { id, filename, mime, buffer });
+
+  // Write to disk (/tmp/uploads or cwd/uploads)
+  const baseDir = process.env.VERCEL ? os.tmpdir() : process.cwd();
+  const uploadsDir = path.join(baseDir, "uploads");
+  try {
+    await fs.mkdir(uploadsDir, { recursive: true });
+    const filePath = path.join(uploadsDir, storageKey);
+    await fs.writeFile(filePath, buffer);
+  } catch (fsErr) {
+    console.warn("⚠️ File write to disk warning:", fsErr);
+  }
+
+  // Attempt DB record creation
+  try {
+    const db = getDb();
+    await db.insert(files).values({
+      id,
+      filename,
+      mime,
+      size: buffer.length,
+      ownerId,
+      storageType: "local",
+      storageKey,
+    });
+  } catch (dbErr) {
+    console.warn("⚠️ Database insert file metadata timed out (using memory cache):", dbErr);
+  }
 
   const url = `/api/files?id=${encodeURIComponent(id)}`;
   return new Response(JSON.stringify({ ok: true, id, url }), { status: 200, headers: { "content-type": "application/json" } });
@@ -84,26 +109,72 @@ async function downloadRoute(request: Request): Promise<Response> {
   const id = url.searchParams.get("id");
   if (!id) return new Response(JSON.stringify({ error: "Missing id" }), { status: 400, headers: { "content-type": "application/json" } });
 
-  const db = getDb();
-  const row = await db.query.files.findFirst({ where: eq(files.id, id) });
-  if (!row) return new Response(JSON.stringify({ error: "File not found" }), { status: 404, headers: { "content-type": "application/json" } });
-
-  if (row.storageType === "local") {
-    const filePath = path.join(process.cwd(), "uploads", row.storageKey);
-    try {
-      const data = await fs.readFile(filePath);
-      return new Response(data, {
-        status: 200,
-        headers: {
-          "content-type": row.mime || "application/octet-stream",
-          "content-disposition": `inline; filename="${row.filename.replace(/\"/g, "\"")}"`,
-        },
-      });
-    } catch (err) {
-      console.error("Failed to read local file", err);
-      return new Response(JSON.stringify({ error: "File not available" }), { status: 404, headers: { "content-type": "application/json" } });
-    }
+  // 1. Check in-memory fileCache first for instant zero-latency serving
+  const cached = fileCache.get(id);
+  if (cached) {
+    return new Response(new Uint8Array(cached.buffer), {
+      status: 200,
+      headers: {
+        "content-type": cached.mime || "application/octet-stream",
+        "content-disposition": `inline; filename="${cached.filename.replace(/"/g, '"')}"`,
+      },
+    });
   }
 
-  return new Response(JSON.stringify({ error: "Unsupported storage type" }), { status: 500, headers: { "content-type": "application/json" } });
+  // 2. Check disk /tmp or cwd
+  const baseDir = process.env.VERCEL ? os.tmpdir() : process.cwd();
+  const diskPaths = [
+    path.join(baseDir, "uploads"),
+    path.join(process.cwd(), "uploads"),
+    path.join(os.tmpdir(), "uploads"),
+  ];
+
+  for (const dir of diskPaths) {
+    try {
+      const filesInDir = await fs.readdir(dir);
+      const matchFile = filesInDir.find((f) => f.startsWith(`${id}-`));
+      if (matchFile) {
+        const fullPath = path.join(dir, matchFile);
+        const data = await fs.readFile(fullPath);
+        const filename = matchFile.slice(id.length + 1);
+        const isPdf = filename.endsWith(".pdf");
+        const isPng = filename.endsWith(".png");
+        const isJpg = filename.endsWith(".jpg") || filename.endsWith(".jpeg");
+        const mime = isPdf ? "application/pdf" : isPng ? "image/png" : isJpg ? "image/jpeg" : "application/octet-stream";
+
+        return new Response(data, {
+          status: 200,
+          headers: {
+            "content-type": mime,
+            "content-disposition": `inline; filename="${filename.replace(/"/g, '"')}"`,
+          },
+        });
+      }
+    } catch (_) {}
+  }
+
+  // 3. Fall back to DB metadata lookup
+  try {
+    const db = getDb();
+    const row = await db.query.files.findFirst({ where: eq(files.id, id) });
+    if (row) {
+      for (const dir of diskPaths) {
+        const filePath = path.join(dir, row.storageKey);
+        try {
+          const data = await fs.readFile(filePath);
+          return new Response(data, {
+            status: 200,
+            headers: {
+              "content-type": row.mime || "application/octet-stream",
+              "content-disposition": `inline; filename="${row.filename.replace(/"/g, '"')}"`,
+            },
+          });
+        } catch (_) {}
+      }
+    }
+  } catch (dbErr) {
+    console.warn("⚠️ Database file lookup warning:", dbErr);
+  }
+
+  return new Response(JSON.stringify({ error: "File not found" }), { status: 404, headers: { "content-type": "application/json" } });
 }
