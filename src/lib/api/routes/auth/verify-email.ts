@@ -3,6 +3,7 @@ import { users } from "../../../db/schema";
 import { verifyToken, generateToken } from "../../../auth";
 import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
+import { serverStore } from "../../../db/server-store";
 
 function getAuthToken(request: Request): string | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -50,7 +51,10 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
     }
 
     // Check code match if DB user exists and has a stored code
-    if (dbUser && dbUser.emailVerificationCode && dbUser.emailVerificationCode !== code && code !== "123456") {
+    const storeUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail);
+    const expectedCode = dbUser?.emailVerificationCode || storeUser?.emailVerificationCode;
+
+    if (expectedCode && expectedCode !== code && code !== "123456") {
       return new Response(
         JSON.stringify({ error: "Incorrect verification code. Please check your email." }),
         { status: 400, headers: { "content-type": "application/json" } }
@@ -70,21 +74,40 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       }
     }
 
-    const updatedUser = {
+    // Sync to serverStore
+    if (storeUser) {
+      serverStore.updateUser(storeUser.id, {
+        isEmailVerified: true,
+        emailVerificationCode: null,
+      });
+    } else {
+      serverStore.saveUser({
+        id: dbUser?.id || userId,
+        name: dbUser?.name || "Student User",
+        email: dbUser?.email || userEmail,
+        role: dbUser?.role || "student",
+        status: "active",
+        joinedAt: new Date().toISOString(),
+        isEmailVerified: true,
+        emailVerificationCode: null,
+      });
+    }
+
+    const finalUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail) || {
       id: dbUser?.id || userId,
       name: dbUser?.name || "Student User",
       email: dbUser?.email || userEmail,
       role: dbUser?.role || "student",
       status: "active",
-      joinedAt: dbUser?.joinedAt || new Date(),
+      joinedAt: new Date().toISOString(),
       isEmailVerified: true,
       emailVerificationCode: null,
     };
 
     const newToken = generateToken({
-      userId: updatedUser.id,
-      email: updatedUser.email,
-      role: updatedUser.role,
+      userId: finalUser.id,
+      email: finalUser.email,
+      role: finalUser.role,
     });
 
     return new Response(
@@ -92,7 +115,7 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
         ok: true,
         message: "Email verified successfully",
         token: newToken,
-        user: updatedUser,
+        user: finalUser,
       }),
       {
         status: 200,
@@ -141,6 +164,11 @@ export async function resendCodeRoute(request: Request): Promise<Response> {
 
     const targetEmail = dbUser?.email || payload?.email || "rhemanthjeyanezsingh@karunya.edu.in";
     const targetName = dbUser?.name || "Student User";
+
+    const storeUser = serverStore.getUserByEmail(targetEmail);
+    if (storeUser) {
+      serverStore.updateUser(storeUser.id, { emailVerificationCode: newCode });
+    }
 
     // Send email
     await sendVerificationEmail(targetEmail, newCode, targetName);

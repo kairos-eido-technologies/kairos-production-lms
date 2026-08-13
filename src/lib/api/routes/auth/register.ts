@@ -4,6 +4,7 @@ import { hashPassword, generateToken } from "../../../auth";
 import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
 import { randomUUID } from "crypto";
+import { serverStore } from "../../../db/server-store";
 
 
 export async function registerRoute(request: Request): Promise<Response> {
@@ -99,6 +100,19 @@ export async function registerRoute(request: Request): Promise<Response> {
     if (!createdUserRecord) {
       throw new Error("Failed to create user");
     }
+
+    // Always sync registered user into serverStore
+    serverStore.saveUser({
+      id: createdUserRecord.id,
+      name: createdUserRecord.name,
+      email: createdUserRecord.email,
+      role: createdUserRecord.role || "student",
+      status: "active",
+      joinedAt: createdUserRecord.joinedAt ? new Date(createdUserRecord.joinedAt).toISOString() : new Date().toISOString(),
+      isEmailVerified: false,
+      emailVerificationCode: verificationCode,
+      phone: createdUserRecord.phone || null,
+    });
 
     // Send the real verification email
     await sendVerificationEmail(emailLower, verificationCode, name.trim());

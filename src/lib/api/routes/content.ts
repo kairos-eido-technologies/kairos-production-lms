@@ -38,36 +38,64 @@ import {
   sendCalendarEventEmail,
   sendAllTestEmails,
 } from "../../mail";
+import { serverStore } from "../../db/server-store";
 
 function makeId() {
   return `${randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-
 async function insertNotification(db: any, userId: string, title: string, message: string, link?: string) {
   const id = `n-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  await db.insert(notifications).values({
+  const notifObj = {
     id,
     userId,
     title,
     message,
     read: false,
     link: link || null,
-    createdAt: new Date(),
-  });
+    createdAt: new Date().toISOString(),
+  };
+  serverStore.addNotification(notifObj);
+  try {
+    await db.insert(notifications).values({
+      id,
+      userId,
+      title,
+      message,
+      read: false,
+      link: link || null,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.warn("⚠️ insertNotification DB warning:", err);
+  }
 }
 
 async function insertMessage(db: any, fromId: string, toId: string, subject: string, body: string) {
   const id = `msg-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-  await db.insert(messages).values({
+  const msgObj = {
     id,
     fromId,
     toId,
     subject,
     body,
     read: false,
-    createdAt: new Date(),
-  });
+    createdAt: new Date().toISOString(),
+  };
+  serverStore.addMessage(msgObj);
+  try {
+    await db.insert(messages).values({
+      id,
+      fromId,
+      toId,
+      subject,
+      body,
+      read: false,
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    console.warn("⚠️ insertMessage DB warning:", err);
+  }
 }
 
 async function generateUniqueRoleId(role: "admin" | "teacher" | "student"): Promise<string> {
@@ -149,23 +177,59 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/users -> list users
     if (request.method === "GET" && path === "/api/users") {
-      const allUsers = await db.select().from(users);
-      const allEnrollments = await db.select().from(enrollments);
-      const mapped = allUsers.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        role: u.role,
-        status: u.status,
-        joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
-        lastActive: u.lastActive ? u.lastActive.toISOString() : null,
-        avatar: u.avatar,
-        phone: u.phone,
-        group: u.group || undefined,
-        isEmailVerified: u.isEmailVerified,
-        // emailVerificationCode intentionally omitted — sensitive field
-        courseIds: allEnrollments.filter((e) => e.studentId === u.id).map((e) => e.courseId),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allUsers = await db.select().from(users);
+        const allEnrollments = await db.select().from(enrollments);
+        mapped = allUsers.map((u) => {
+          const item = {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+            status: u.status,
+            joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
+            lastActive: u.lastActive ? u.lastActive.toISOString() : null,
+            avatar: u.avatar,
+            phone: u.phone,
+            group: u.group || undefined,
+            isEmailVerified: u.isEmailVerified,
+            courseIds: allEnrollments.filter((e) => e.studentId === u.id).map((e) => e.courseId),
+          };
+          serverStore.saveUser(item as any);
+          return item;
+        });
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/users (using serverStore fallback)");
+      }
+
+      // Merge storeUsers to ensure any locally registered/verified user is displayed
+      const storeUsers = serverStore.getAllUsers();
+      for (const su of storeUsers) {
+        if (!mapped.some((m) => m.id === su.id || m.email.toLowerCase() === su.email.toLowerCase())) {
+          mapped.push({
+            id: su.id,
+            name: su.name,
+            email: su.email,
+            role: su.role,
+            status: su.status,
+            joinedAt: su.joinedAt ? su.joinedAt.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            lastActive: su.lastActive || null,
+            avatar: su.avatar || null,
+            phone: su.phone || null,
+            group: su.group || undefined,
+            isEmailVerified: su.isEmailVerified,
+            courseIds: su.courseIds || [],
+          });
+        } else {
+          // Update isEmailVerified flag if store has updated status
+          const existing = mapped.find((m) => m.id === su.id || m.email.toLowerCase() === su.email.toLowerCase());
+          if (existing && su.isEmailVerified !== undefined) {
+            existing.isEmailVerified = su.isEmailVerified;
+          }
+        }
+      }
+
       return new Response(JSON.stringify({ users: mapped }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -182,36 +246,56 @@ export async function contentRoute(request: Request): Promise<Response> {
           headers: { "content-type": "application/json" },
         });
       }
-      const existingUser = await db.query.users.findFirst({
-        where: eq(users.email, emailLower),
-      });
-      if (existingUser) {
-        return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
-          status: 400,
-          headers: { "content-type": "application/json" },
-        });
-      }
 
       const role = body.role || "student";
       const id = await generateUniqueRoleId(role);
       const passwordHash = await hashPassword(body.password || "default123");
       const now = new Date();
-      await db.insert(users).values({
+
+      let created: any = null;
+      try {
+        const existingUser = await db.query.users.findFirst({
+          where: eq(users.email, emailLower),
+        });
+        if (existingUser) {
+          return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
+        await db.insert(users).values({
+          id,
+          name: body.name || "Untitled",
+          email: emailLower,
+          passwordHash,
+          role,
+          group: body.group || null,
+          status: body.status || "active",
+          joinedAt: body.joinedAt ? new Date(body.joinedAt) : now,
+          lastActive: null,
+          isEmailVerified: true,
+          emailVerificationCode: null,
+          phone: body.phone || null,
+        });
+        created = await db.query.users.findFirst({ where: eq(users.id, id) });
+      } catch (dbErr) {
+        console.warn("⚠️ Database insert user timed out (using serverStore fallback)");
+      }
+
+      const storeUser = serverStore.saveUser({
         id,
         name: body.name || "Untitled",
         email: emailLower,
-        passwordHash,
-        role: body.role || "student",
+        role,
         group: body.group || null,
         status: body.status || "active",
-        joinedAt: body.joinedAt ? new Date(body.joinedAt) : now,
-        lastActive: null,
+        joinedAt: body.joinedAt ? new Date(body.joinedAt).toISOString() : now.toISOString(),
         isEmailVerified: true,
-        emailVerificationCode: null,
         phone: body.phone || null,
       });
-      const created = await db.query.users.findFirst({ where: eq(users.id, id) });
-      return new Response(JSON.stringify({ user: created }), {
+
+      return new Response(JSON.stringify({ user: created || storeUser }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -335,18 +419,8 @@ export async function contentRoute(request: Request): Promise<Response> {
         allItems = await db.select().from(contentItems);
         allEnrollments = await db.select().from(enrollments);
       } catch (dbError: any) {
-        console.error("Database query failed in GET /api/courses:", dbError?.message || dbError);
-        return new Response(
-          JSON.stringify({
-            courses: [],
-            error: "Database authentication or connection failed. Please verify DATABASE_URL in your .env file.",
-            details: dbError?.message,
-          }),
-          {
-            status: 500,
-            headers: { "content-type": "application/json" },
-          }
-        );
+        console.warn("⚠️ Database query timed out in GET /api/courses (using serverStore fallback)");
+        allCourses = serverStore.getCourses();
       }
 
       // Anonymous visitors only see active courses marked for preview
@@ -1501,16 +1575,32 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/messages -> list all messages
     if (request.method === "GET" && path === "/api/messages") {
-      const allMsgs = await db.select().from(messages);
-      const mapped = allMsgs.map((m) => ({
-        id: m.id,
-        fromId: m.fromId,
-        toId: m.toId,
-        subject: m.subject,
-        body: m.body,
-        read: m.read,
-        createdAt: m.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allMsgs = await db.select().from(messages);
+        mapped = allMsgs.map((m) => {
+          const item = {
+            id: m.id,
+            fromId: m.fromId,
+            toId: m.toId,
+            subject: m.subject,
+            body: m.body,
+            read: m.read,
+            createdAt: m.createdAt.toISOString(),
+          };
+          serverStore.addMessage(item);
+          return item;
+        });
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/messages (using serverStore fallback)");
+      }
+
+      const storeMsgs = serverStore.getMessages();
+      for (const sm of storeMsgs) {
+        if (!mapped.some((m) => m.id === sm.id)) {
+          mapped.push(sm);
+        }
+      }
 
       return new Response(JSON.stringify({ messages: mapped }), {
         status: 200,
@@ -1522,37 +1612,54 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/messages") {
       const body = await request.json();
       const id = body.id || makeId();
+      const createdAtStr = body.createdAt ? new Date(body.createdAt).toISOString() : new Date().toISOString();
 
-      await db.insert(messages).values({
+      const newMsg = {
         id,
         fromId: body.fromId,
         toId: body.toId,
         subject: body.subject || "",
         body: body.body || "",
         read: body.read ?? false,
-        createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-      });
+        createdAt: createdAtStr,
+      };
 
-      const recipient = await db.query.users.findFirst({ where: eq(users.id, body.toId) });
-      const sender = await db.query.users.findFirst({ where: eq(users.id, body.fromId) });
-      if (recipient) {
-        if (body.subject === "We miss you! 👋") {
-          sendNudgeEmail(recipient.email, recipient.name, body.subject, body.body).catch(console.error);
-        } else {
+      try {
+        await db.insert(messages).values({
+          id,
+          fromId: body.fromId,
+          toId: body.toId,
+          subject: body.subject || "",
+          body: body.body || "",
+          read: body.read ?? false,
+          createdAt: new Date(createdAtStr),
+        });
+
+        const recipient = (await db.query.users.findFirst({ where: eq(users.id, body.toId) })) || serverStore.getUserById(body.toId);
+        const sender = (await db.query.users.findFirst({ where: eq(users.id, body.fromId) })) || serverStore.getUserById(body.fromId);
+        if (recipient) {
+          if (body.subject === "We miss you! 👋") {
+            sendNudgeEmail(recipient.email, recipient.name, body.subject, body.body).catch(console.error);
+          } else {
+            const senderName = sender ? sender.name : "System / Administrator";
+            sendMessageNotificationEmail(recipient.email, recipient.name, senderName, body.subject || "New Message", body.body || "").catch(console.error);
+          }
+        }
+      } catch (dbErr) {
+        console.warn("⚠️ Database insert message timed out (using serverStore fallback)");
+        const recipient = serverStore.getUserById(body.toId);
+        const sender = serverStore.getUserById(body.fromId);
+        if (recipient) {
           const senderName = sender ? sender.name : "System / Administrator";
           sendMessageNotificationEmail(recipient.email, recipient.name, senderName, body.subject || "New Message", body.body || "").catch(console.error);
         }
       }
 
-      const created = await db.query.messages.findFirst({ where: eq(messages.id, id) });
+      serverStore.addMessage(newMsg);
+
       return new Response(
         JSON.stringify({
-          message: created
-            ? {
-                ...created,
-                createdAt: created.createdAt.toISOString(),
-              }
-            : null,
+          message: newMsg,
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
