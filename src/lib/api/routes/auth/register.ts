@@ -37,16 +37,30 @@ export async function registerRoute(request: Request): Promise<Response> {
     }
 
     // Check if user already exists
-    let existingUser = null;
+    let existingUser: any = null;
     try {
-      const db = getDb();
-      existingUser = await db.query.users.findFirst({
-        where: eq(users.email, emailLower),
-      });
-    } catch (dbErr) {
-      console.warn("⚠️ Database query timed out / blocked locally during registration.");
-      // Fallback: check serverStore so we don't allow duplicate accounts on cold starts
-      existingUser = serverStore.getUserByEmail(emailLower);
+      const { data: sUser } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", emailLower)
+        .maybeSingle();
+      if (sUser) {
+        existingUser = sUser;
+      }
+    } catch (sErr) {
+      console.warn("⚠️ Supabase check existing user warning:", sErr);
+    }
+
+    if (!existingUser) {
+      try {
+        const db = getDb();
+        existingUser = await db.query.users.findFirst({
+          where: eq(users.email, emailLower),
+        });
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out / blocked locally during registration.");
+        existingUser = serverStore.getUserByEmail(emailLower);
+      }
     }
 
     if (existingUser) {
@@ -63,11 +77,52 @@ export async function registerRoute(request: Request): Promise<Response> {
     const newUserId = `STU-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    let createdUserRecord: any = null;
+    let createdUserRecord: any = {
+      id: newUserId,
+      name: name.trim(),
+      email: emailLower,
+      passwordHash,
+      role: "student",
+      status: "active",
+      joinedAt: new Date(),
+      lastActive: new Date(),
+      isEmailVerified: false,
+      emailVerificationCode: verificationCode,
+      phone: phone || null,
+    };
 
+    // 1. Sync to Supabase REST API (Primary persistent store)
+    try {
+      const { data: insertedSupabase, error: sInsertErr } = await supabase.from("users").upsert({
+        id: newUserId,
+        name: name.trim(),
+        email: emailLower,
+        password_hash: passwordHash,
+        role: "student",
+        status: "active",
+        joined_at: new Date().toISOString(),
+        is_email_verified: false,
+        email_verification_code: verificationCode,
+        phone: phone || null,
+      }, { onConflict: "id" }).select().single();
+
+      if (insertedSupabase) {
+        createdUserRecord = {
+          ...insertedSupabase,
+          passwordHash: insertedSupabase.password_hash || passwordHash,
+          joinedAt: insertedSupabase.joined_at ? new Date(insertedSupabase.joined_at) : new Date(),
+          isEmailVerified: insertedSupabase.is_email_verified ?? false,
+          emailVerificationCode: insertedSupabase.email_verification_code || verificationCode,
+        };
+      }
+    } catch (sErr) {
+      console.warn("⚠️ Supabase HTTPS sync warning:", sErr);
+    }
+
+    // 2. Try Drizzle direct DB connection
     try {
       const db = getDb();
-      const newUser = await db
+      await db
         .insert(users)
         .values({
           id: newUserId,
@@ -82,30 +137,12 @@ export async function registerRoute(request: Request): Promise<Response> {
           emailVerificationCode: verificationCode,
           phone: phone || null,
         })
-        .returning();
-      createdUserRecord = newUser[0];
+        .onConflictDoNothing();
     } catch (dbErr) {
-      console.warn("⚠️ Database insert timed out locally. Created local fallback user session.");
-      createdUserRecord = {
-        id: newUserId,
-        name: name.trim(),
-        email: emailLower,
-        passwordHash,
-        role: "student",
-        status: "active",
-        joinedAt: new Date(),
-        lastActive: new Date(),
-        isEmailVerified: false,
-        emailVerificationCode: verificationCode,
-        phone: phone || null,
-      };
+      console.warn("⚠️ Database insert timed out locally.");
     }
 
-    if (!createdUserRecord) {
-      throw new Error("Failed to create user");
-    }
-
-    // Always sync registered user into serverStore & Supabase
+    // 3. Sync to serverStore memory cache
     serverStore.saveUser({
       id: createdUserRecord.id,
       name: createdUserRecord.name,
@@ -118,23 +155,6 @@ export async function registerRoute(request: Request): Promise<Response> {
       emailVerificationCode: verificationCode,
       phone: createdUserRecord.phone || null,
     });
-
-    try {
-      await supabase.from("users").upsert({
-        id: createdUserRecord.id,
-        name: createdUserRecord.name,
-        email: createdUserRecord.email,
-        password_hash: passwordHash,
-        role: "student",
-        status: "active",
-        joined_at: new Date().toISOString(),
-        is_email_verified: false,
-        email_verification_code: verificationCode,
-        phone: phone || null,
-      }, { onConflict: "id" });
-    } catch (sErr) {
-      console.warn("⚠️ Supabase HTTPS sync warning:", sErr);
-    }
 
     // Send the real verification email
     await sendVerificationEmail(emailLower, verificationCode, name.trim());

@@ -39,6 +39,7 @@ import {
   sendAllTestEmails,
 } from "../../mail";
 import { serverStore } from "../../db/server-store";
+import { supabase } from "../../db/supabase-client";
 
 function makeId() {
   return `${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -193,12 +194,53 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/users -> list users
     if (request.method === "GET" && path === "/api/users") {
       let mapped: any[] = [];
-      if (isDatabaseHealthy()) {
+
+      // Primary source: Supabase REST API
+      try {
+        const { data: sUsers, error: sErr } = await supabase.from("users").select("*");
+        const { data: sEnrollments } = await supabase.from("enrollments").select("*");
+
+        if (sUsers && !sErr) {
+          const enrollmentsMap = new Map<string, string[]>();
+          if (sEnrollments) {
+            for (const e of sEnrollments) {
+              const studentId = e.student_id || e.studentId;
+              const courseId = e.course_id || e.courseId;
+              const list = enrollmentsMap.get(studentId) || [];
+              list.push(courseId);
+              enrollmentsMap.set(studentId, list);
+            }
+          }
+
+          mapped = sUsers.map((u: any) => {
+            const item = {
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+              status: u.status,
+              joinedAt: u.joined_at ? u.joined_at.slice(0, 10) : "",
+              lastActive: u.last_active || null,
+              avatar: u.avatar || null,
+              phone: u.phone || null,
+              group: u.group_name || u.group || undefined,
+              isEmailVerified: u.is_email_verified ?? true,
+              courseIds: enrollmentsMap.get(u.id) || [],
+            };
+            serverStore.saveUser(item as any);
+            return item;
+          });
+        }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase GET /api/users warning:", sErr);
+      }
+
+      // Secondary check: Drizzle DB if Supabase had no results
+      if (mapped.length === 0 && isDatabaseHealthy()) {
         try {
           const allUsers = await db.select().from(users);
           const allEnrollments = await db.select().from(enrollments);
 
-          // Pre-build O(1) Map index for enrollments
           const enrollmentsMap = new Map<string, string[]>();
           for (const e of allEnrollments) {
             const list = enrollmentsMap.get(e.studentId) || [];
@@ -230,7 +272,7 @@ export async function contentRoute(request: Request): Promise<Response> {
         }
       }
 
-      // Merge storeUsers to ensure any locally registered/verified user is displayed
+      // Merge storeUsers if any in-memory user isn't in mapped list yet
       const storeUsers = serverStore.getAllUsers();
       for (const su of storeUsers) {
         if (!mapped.some((m) => m.id === su.id || m.email.toLowerCase() === su.email.toLowerCase())) {
@@ -248,12 +290,6 @@ export async function contentRoute(request: Request): Promise<Response> {
             isEmailVerified: su.isEmailVerified,
             courseIds: su.courseIds || [],
           });
-        } else {
-          // Update isEmailVerified flag if store has updated status
-          const existing = mapped.find((m) => m.id === su.id || m.email.toLowerCase() === su.email.toLowerCase());
-          if (existing && su.isEmailVerified !== undefined) {
-            existing.isEmailVerified = su.isEmailVerified;
-          }
         }
       }
 
@@ -279,18 +315,55 @@ export async function contentRoute(request: Request): Promise<Response> {
       const passwordHash = await hashPassword(body.password || "default123");
       const now = new Date();
 
-      let created: any = null;
+      // Check existing in Supabase
       try {
-        const existingUser = await db.query.users.findFirst({
-          where: eq(users.email, emailLower),
-        });
-        if (existingUser) {
+        const { data: existingS } = await supabase.from("users").select("id").eq("email", emailLower).maybeSingle();
+        if (existingS) {
           return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
             status: 400,
             headers: { "content-type": "application/json" },
           });
         }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase check existing user warning:", sErr);
+      }
 
+      let created: any = null;
+
+      // 1. Save to Supabase REST API
+      try {
+        const { data: insertedS } = await supabase.from("users").upsert({
+          id,
+          name: body.name || "Untitled",
+          email: emailLower,
+          password_hash: passwordHash,
+          role,
+          group_name: body.group || null,
+          status: body.status || "active",
+          joined_at: body.joinedAt ? new Date(body.joinedAt).toISOString() : now.toISOString(),
+          is_email_verified: true,
+          phone: body.phone || null,
+        }, { onConflict: "id" }).select().single();
+
+        if (insertedS) {
+          created = {
+            id: insertedS.id,
+            name: insertedS.name,
+            email: insertedS.email,
+            role: insertedS.role,
+            group: insertedS.group_name || insertedS.group,
+            status: insertedS.status,
+            joinedAt: insertedS.joined_at,
+            isEmailVerified: insertedS.is_email_verified,
+            phone: insertedS.phone,
+          };
+        }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase insert user warning:", sErr);
+      }
+
+      // 2. Save to Drizzle DB
+      try {
         await db.insert(users).values({
           id,
           name: body.name || "Untitled",
@@ -304,12 +377,12 @@ export async function contentRoute(request: Request): Promise<Response> {
           isEmailVerified: true,
           emailVerificationCode: null,
           phone: body.phone || null,
-        });
-        created = await db.query.users.findFirst({ where: eq(users.id, id) });
+        }).onConflictDoNothing();
       } catch (dbErr) {
-        console.warn("⚠️ Database insert user timed out (using serverStore fallback)");
+        console.warn("⚠️ Database insert user timed out locally");
       }
 
+      // 3. Save to serverStore
       const storeUser = serverStore.saveUser({
         id,
         name: body.name || "Untitled",
@@ -333,49 +406,73 @@ export async function contentRoute(request: Request): Promise<Response> {
       const id = path.slice("/api/users/".length);
       const body = await request.json();
       const updateData: any = {};
-      if (body.name !== undefined) updateData.name = body.name;
+      const supabaseUpdate: any = {};
+
+      if (body.name !== undefined) { updateData.name = body.name; supabaseUpdate.name = body.name; }
       if (body.email !== undefined) {
         const emailLower = body.email.toLowerCase().trim();
         try {
-          const existingWithEmail = await db.query.users.findFirst({
-            where: eq(users.email, emailLower),
-          });
-          if (existingWithEmail && existingWithEmail.id !== id) {
+          const { data: existingS } = await supabase.from("users").select("id").eq("email", emailLower).maybeSingle();
+          if (existingS && existingS.id !== id) {
             return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
               status: 400,
               headers: { "content-type": "application/json" },
             });
           }
-        } catch (dbErr) {
-          console.warn("⚠️ Email uniqueness check timed out for PUT /api/users/:id");
-        }
+        } catch (sErr) {}
         updateData.email = emailLower;
+        supabaseUpdate.email = emailLower;
       }
-      if (body.role !== undefined) updateData.role = body.role;
-      if (body.group !== undefined) updateData.group = body.group;
-      if (body.status !== undefined) updateData.status = body.status;
-      if (body.avatar !== undefined) updateData.avatar = body.avatar;
-      if (body.phone !== undefined) updateData.phone = body.phone;
-      if (body.isEmailVerified !== undefined) updateData.isEmailVerified = body.isEmailVerified;
+      if (body.role !== undefined) { updateData.role = body.role; supabaseUpdate.role = body.role; }
+      if (body.group !== undefined) { updateData.group = body.group; supabaseUpdate.group_name = body.group; }
+      if (body.status !== undefined) { updateData.status = body.status; supabaseUpdate.status = body.status; }
+      if (body.avatar !== undefined) { updateData.avatar = body.avatar; supabaseUpdate.avatar = body.avatar; }
+      if (body.phone !== undefined) { updateData.phone = body.phone; supabaseUpdate.phone = body.phone; }
+      if (body.isEmailVerified !== undefined) { updateData.isEmailVerified = body.isEmailVerified; supabaseUpdate.is_email_verified = body.isEmailVerified; }
       if (body.password !== undefined && body.password !== "") {
-        updateData.passwordHash = await hashPassword(body.password);
+        const hash = await hashPassword(body.password);
+        updateData.passwordHash = hash;
+        supabaseUpdate.password_hash = hash;
       }
 
       let updated: any = null;
+
+      // 1. Update in Supabase REST API
       try {
-        await db.update(users).set(updateData).where(eq(users.id, id));
-        updated = await db.query.users.findFirst({ where: eq(users.id, id) });
-      } catch (dbErr) {
-        console.warn("⚠️ Database update timed out in PUT /api/users/:id (using serverStore fallback)");
+        if (Object.keys(supabaseUpdate).length > 0) {
+          const { data: updatedS } = await supabase.from("users").update(supabaseUpdate).eq("id", id).select().single();
+          if (updatedS) {
+            updated = {
+              id: updatedS.id,
+              name: updatedS.name,
+              email: updatedS.email,
+              role: updatedS.role,
+              group: updatedS.group_name || updatedS.group,
+              status: updatedS.status,
+              joinedAt: updatedS.joined_at,
+              isEmailVerified: updatedS.is_email_verified,
+              phone: updatedS.phone,
+            };
+          }
+        }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase update user warning:", sErr);
       }
 
-      // Always sync serverStore for subsequent fallbacks
+      // 2. Update in Drizzle DB
+      try {
+        await db.update(users).set(updateData).where(eq(users.id, id));
+      } catch (dbErr) {
+        console.warn("⚠️ Database update timed out in PUT /api/users/:id");
+      }
+
+      // 3. Update serverStore
       const storeUpdate = {
         ...updateData,
         role: updateData.role as any,
         status: updateData.status as any,
       };
-      delete storeUpdate.passwordHash; // Don't expose hash
+      delete storeUpdate.passwordHash;
       const storedUser = serverStore.updateUser(id, storeUpdate) || serverStore.getUserById(id);
 
       return new Response(JSON.stringify({ user: updated || storedUser }), {
@@ -388,28 +485,46 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "DELETE" && path.startsWith("/api/users/")) {
       const id = path.slice("/api/users/".length);
 
+      // Check teacher courses in Supabase & DB
       try {
-        // Check if teacher is assigned to courses
-        const isTeacherOfCourses = await db.query.courses.findFirst({
-          where: eq(courses.teacherId, id),
-        });
-        if (isTeacherOfCourses) {
+        const { data: teacherCourse } = await supabase.from("courses").select("id, name").eq("teacher_id", id).maybeSingle();
+        if (teacherCourse) {
           return new Response(
             JSON.stringify({
-              error: `This instructor is assigned to teach course "${isTeacherOfCourses.name}". Please reassign or delete that course first.`,
+              error: `This instructor is assigned to teach course "${teacherCourse.name}". Please reassign or delete that course first.`,
             }),
             { status: 400, headers: { "content-type": "application/json" } }
           );
         }
+      } catch (sErr) {}
 
-        // Cleanup student-related records
+      // 1. Delete from Supabase REST API
+      try {
+        await supabase.from("progress").delete().eq("student_id", id);
+        await supabase.from("certificates").delete().eq("student_id", id);
+        await supabase.from("enrollments").delete().eq("student_id", id);
+        await supabase.from("notifications").delete().eq("user_id", id);
+        await supabase.from("messages").delete().eq("from_id", id);
+        await supabase.from("messages").delete().eq("to_id", id);
+        const { data: subs } = await supabase.from("submissions").select("id").eq("student_id", id);
+        if (subs && subs.length > 0) {
+          for (const s of subs) {
+            await supabase.from("submission_responses").delete().eq("submission_id", s.id);
+          }
+          await supabase.from("submissions").delete().eq("student_id", id);
+        }
+        await supabase.from("users").delete().eq("id", id);
+      } catch (sErr) {
+        console.warn("⚠️ Supabase delete user warning:", sErr);
+      }
+
+      // 2. Delete from Drizzle DB
+      try {
         await db.delete(progress).where(eq(progress.studentId, id));
         await db.delete(certificates).where(eq(certificates.studentId, id));
         await db.delete(enrollments).where(eq(enrollments.studentId, id));
         await db.delete(notifications).where(eq(notifications.userId, id));
         await db.delete(messages).where(or(eq(messages.fromId, id), eq(messages.toId, id)));
-
-        // Cleanup submissions and submission responses
         const studentSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.studentId, id));
         const subIds = studentSubmissions.map((s) => s.id);
         if (subIds.length > 0) {
@@ -418,13 +533,12 @@ export async function contentRoute(request: Request): Promise<Response> {
           }
           await db.delete(submissions).where(eq(submissions.studentId, id));
         }
-
         await db.delete(users).where(eq(users.id, id));
       } catch (dbErr) {
-        console.warn("⚠️ Database delete timed out in DELETE /api/users/:id (using serverStore fallback)");
+        console.warn("⚠️ Database delete timed out in DELETE /api/users/:id");
       }
 
-      // Always clean up serverStore regardless of DB outcome
+      // 3. Delete from serverStore
       serverStore.deleteUser(id);
 
       return new Response(JSON.stringify({ ok: true }), {

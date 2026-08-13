@@ -29,22 +29,14 @@ export async function loginRoute(request: Request): Promise<Response> {
     }
 
     if (!user) {
-      // Fallback 1: check serverStore (in-memory, survives within same container)
-      const storeUser = serverStore.getUserByEmail(emailLower);
-      if (storeUser) {
-        user = storeUser;
-      }
-    }
-
-    if (!user) {
-      // Fallback 2: Supabase HTTPS REST API (always reachable, survives cold starts)
+      // Fallback 1: Supabase HTTPS REST API (always reachable, persistent store)
       try {
         const { supabase } = await import("../../../db/supabase-client");
         const { data, error } = await supabase
           .from("users")
           .select("*")
           .eq("email", emailLower)
-          .single();
+          .maybeSingle();
         if (data && !error) {
           user = {
             ...data,
@@ -53,7 +45,6 @@ export async function loginRoute(request: Request): Promise<Response> {
             isEmailVerified: data.is_email_verified,
             emailVerificationCode: data.email_verification_code,
           };
-          // Hydrate serverStore cache for subsequent requests in this container
           serverStore.saveUser({
             id: user.id,
             name: user.name,
@@ -68,6 +59,14 @@ export async function loginRoute(request: Request): Promise<Response> {
         }
       } catch (sErr) {
         console.warn("⚠️ Supabase HTTPS fallback failed during login:", sErr);
+      }
+    }
+
+    if (!user) {
+      // Fallback 2: check serverStore memory cache
+      const storeUser = serverStore.getUserByEmail(emailLower);
+      if (storeUser) {
+        user = storeUser;
       }
     }
 
