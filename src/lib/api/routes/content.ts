@@ -530,7 +530,10 @@ export async function contentRoute(request: Request): Promise<Response> {
         const match = cookies.match(/(?:^|; )auth_token=([^;]+)/);
         token = match?.[1] ?? null;
       }
-      const isAuthenticated = token ? !!verifyToken(token) : false;
+      let allCourses: any[] = [];
+      let allSections: any[] = [];
+      let allItems: any[] = [];
+      let allEnrollments: any[] = [];
 
       try {
         const { data: sCourses } = await supabase.from("courses").select("*");
