@@ -36,16 +36,17 @@ export async function registerRoute(request: Request): Promise<Response> {
       );
     }
 
-    const db = getDb();
-
     // Check if user already exists
     let existingUser = null;
     try {
+      const db = getDb();
       existingUser = await db.query.users.findFirst({
         where: eq(users.email, emailLower),
       });
     } catch (dbErr) {
       console.warn("⚠️ Database query timed out / blocked locally during registration.");
+      // Fallback: check serverStore so we don't allow duplicate accounts on cold starts
+      existingUser = serverStore.getUserByEmail(emailLower);
     }
 
     if (existingUser) {
@@ -65,6 +66,7 @@ export async function registerRoute(request: Request): Promise<Response> {
     let createdUserRecord: any = null;
 
     try {
+      const db = getDb();
       const newUser = await db
         .insert(users)
         .values({

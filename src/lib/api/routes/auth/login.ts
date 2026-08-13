@@ -29,10 +29,45 @@ export async function loginRoute(request: Request): Promise<Response> {
     }
 
     if (!user) {
-      // Search serverStore fallback
+      // Fallback 1: check serverStore (in-memory, survives within same container)
       const storeUser = serverStore.getUserByEmail(emailLower);
       if (storeUser) {
         user = storeUser;
+      }
+    }
+
+    if (!user) {
+      // Fallback 2: Supabase HTTPS REST API (always reachable, survives cold starts)
+      try {
+        const { supabase } = await import("../../../db/supabase-client");
+        const { data, error } = await supabase
+          .from("users")
+          .select("*")
+          .eq("email", emailLower)
+          .single();
+        if (data && !error) {
+          user = {
+            ...data,
+            passwordHash: data.password_hash,
+            joinedAt: data.joined_at,
+            isEmailVerified: data.is_email_verified,
+            emailVerificationCode: data.email_verification_code,
+          };
+          // Hydrate serverStore cache for subsequent requests in this container
+          serverStore.saveUser({
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            passwordHash: user.passwordHash,
+            role: user.role,
+            status: user.status,
+            joinedAt: user.joinedAt,
+            isEmailVerified: user.isEmailVerified ?? false,
+            phone: user.phone || null,
+          });
+        }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase HTTPS fallback failed during login:", sErr);
       }
     }
 
