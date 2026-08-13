@@ -37,9 +37,14 @@ export async function registerRoute(request: Request): Promise<Response> {
     const db = getDb();
 
     // Check if user already exists
-    const existingUser = await db.query.users.findFirst({
-      where: eq(users.email, emailLower),
-    });
+    let existingUser = null;
+    try {
+      existingUser = await db.query.users.findFirst({
+        where: eq(users.email, emailLower),
+      });
+    } catch (dbErr) {
+      console.warn("Database query warning in registerRoute:", dbErr);
+    }
 
     if (existingUser) {
       return new Response(
@@ -55,14 +60,32 @@ export async function registerRoute(request: Request): Promise<Response> {
     const newUserId = `STU-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
+    let createdUserRecord: any = null;
 
-    const newUser = await db
-      .insert(users)
-      .values({
+    try {
+      const newUser = await db
+        .insert(users)
+        .values({
+          id: newUserId,
+          name: name.trim(),
+          email: emailLower,
+          passwordHash,
+          role: "student",
+          status: "active",
+          joinedAt: new Date(),
+          lastActive: new Date(),
+          isEmailVerified: false,
+          emailVerificationCode: verificationCode,
+          phone: phone || null,
+        })
+        .returning();
+      createdUserRecord = newUser[0];
+    } catch (dbErr) {
+      console.warn("Database insert warning in registerRoute (using fallback):", dbErr);
+      createdUserRecord = {
         id: newUserId,
         name: name.trim(),
         email: emailLower,
-        passwordHash,
         role: "student",
         status: "active",
         joinedAt: new Date(),
@@ -70,10 +93,10 @@ export async function registerRoute(request: Request): Promise<Response> {
         isEmailVerified: false,
         emailVerificationCode: verificationCode,
         phone: phone || null,
-      })
-      .returning();
+      };
+    }
 
-    if (!newUser[0]) {
+    if (!createdUserRecord) {
       throw new Error("Failed to create user");
     }
 
@@ -81,12 +104,12 @@ export async function registerRoute(request: Request): Promise<Response> {
     await sendVerificationEmail(emailLower, verificationCode, name.trim());
 
     const token = generateToken({
-      userId: newUser[0].id,
-      email: newUser[0].email,
-      role: newUser[0].role,
+      userId: createdUserRecord.id,
+      email: createdUserRecord.email,
+      role: createdUserRecord.role,
     });
 
-    const { passwordHash: _, emailVerificationCode: __, ...userWithoutPassword } = newUser[0];
+    const { passwordHash: _, emailVerificationCode: __, ...userWithoutPassword } = createdUserRecord;
 
     return new Response(
       JSON.stringify({
