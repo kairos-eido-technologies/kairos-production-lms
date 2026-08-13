@@ -13,6 +13,12 @@ if (!connectionString && process.env.NODE_ENV === "production") {
 let client: postgres.Sql | null = null;
 
 export function getDb() {
+  const connectionString = process.env.DATABASE_URL || "";
+  if (!connectionString) {
+    throw new Error(
+      "[DATABASE] DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env file."
+    );
+  }
   if (!client) {
     client = postgres(connectionString);
   }
