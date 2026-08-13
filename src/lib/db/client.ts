@@ -11,6 +11,28 @@ if (!connectionString && process.env.NODE_ENV === "production") {
 }
 
 let client: postgres.Sql | null = null;
+let dbHealthy = true;
+let lastCheckTime = 0;
+const CIRCUIT_BREAKER_WINDOW_MS = 30000; // 30 seconds
+
+export function isDatabaseHealthy(): boolean {
+  if (!dbHealthy && Date.now() - lastCheckTime < CIRCUIT_BREAKER_WINDOW_MS) {
+    return false;
+  }
+  return true;
+}
+
+export function markDbUnhealthy() {
+  if (dbHealthy) {
+    console.warn("⚠️ Database port 6543/5432 is unreachable locally. Activating 30s zero-latency circuit breaker (serverStore fallback).");
+  }
+  dbHealthy = false;
+  lastCheckTime = Date.now();
+}
+
+export function markDbHealthy() {
+  dbHealthy = true;
+}
 
 export function getDb() {
   const connectionString = process.env.DATABASE_URL || "";
@@ -23,7 +45,7 @@ export function getDb() {
     client = postgres(connectionString, {
       prepare: false,
       ssl: "require",
-      connect_timeout: 3, // 3 seconds timeout for fast fallback when DB port is blocked locally
+      connect_timeout: 1, // 1 second fast connect probe for zero lag
       idle_timeout: 20,   // Close idle connections after 20s
       max_lifetime: 60 * 5, // Reconnect after 5 minutes
     });

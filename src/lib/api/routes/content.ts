@@ -1,4 +1,4 @@
-import { getDb } from "../../db/client";
+import { getDb, isDatabaseHealthy, markDbUnhealthy, markDbHealthy } from "../../db/client";
 import {
   courses,
   sections,
@@ -193,38 +193,41 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/users -> list users
     if (request.method === "GET" && path === "/api/users") {
       let mapped: any[] = [];
-      try {
-        const allUsers = await db.select().from(users);
-        const allEnrollments = await db.select().from(enrollments);
+      if (isDatabaseHealthy()) {
+        try {
+          const allUsers = await db.select().from(users);
+          const allEnrollments = await db.select().from(enrollments);
 
-        // Pre-build O(1) Map index for enrollments
-        const enrollmentsMap = new Map<string, string[]>();
-        for (const e of allEnrollments) {
-          const list = enrollmentsMap.get(e.studentId) || [];
-          list.push(e.courseId);
-          enrollmentsMap.set(e.studentId, list);
+          // Pre-build O(1) Map index for enrollments
+          const enrollmentsMap = new Map<string, string[]>();
+          for (const e of allEnrollments) {
+            const list = enrollmentsMap.get(e.studentId) || [];
+            list.push(e.courseId);
+            enrollmentsMap.set(e.studentId, list);
+          }
+
+          mapped = allUsers.map((u) => {
+            const item = {
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+              status: u.status,
+              joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
+              lastActive: u.lastActive ? u.lastActive.toISOString() : null,
+              avatar: u.avatar,
+              phone: u.phone,
+              group: u.group || undefined,
+              isEmailVerified: u.isEmailVerified,
+              courseIds: enrollmentsMap.get(u.id) || [],
+            };
+            serverStore.saveUser(item as any);
+            return item;
+          });
+          markDbHealthy();
+        } catch (dbErr) {
+          markDbUnhealthy();
         }
-
-        mapped = allUsers.map((u) => {
-          const item = {
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            role: u.role,
-            status: u.status,
-            joinedAt: u.joinedAt ? u.joinedAt.toISOString().slice(0, 10) : "",
-            lastActive: u.lastActive ? u.lastActive.toISOString() : null,
-            avatar: u.avatar,
-            phone: u.phone,
-            group: u.group || undefined,
-            isEmailVerified: u.isEmailVerified,
-            courseIds: enrollmentsMap.get(u.id) || [],
-          };
-          serverStore.saveUser(item as any);
-          return item;
-        });
-      } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/users (using serverStore fallback)");
       }
 
       // Merge storeUsers to ensure any locally registered/verified user is displayed
@@ -465,13 +468,22 @@ export async function contentRoute(request: Request): Promise<Response> {
       let allItems: any[] = [];
       let allEnrollments: any[] = [];
 
+      if (!isDatabaseHealthy()) {
+        const cached = serverStore.getCourses();
+        return new Response(JSON.stringify({ courses: cached }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         allCourses = await db.select().from(courses);
         allSections = await db.select().from(sections);
         allItems = await db.select().from(contentItems);
         allEnrollments = await db.select().from(enrollments);
+        markDbHealthy();
       } catch (dbError: any) {
-        console.warn("⚠️ Database query timed out in GET /api/courses (using serverStore fallback)");
+        markDbUnhealthy();
         const cached = serverStore.getCourses();
         return new Response(JSON.stringify({ courses: cached }), {
           status: 200,

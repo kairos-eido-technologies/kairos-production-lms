@@ -1,4 +1,4 @@
-import { getDb } from "../../../db/client";
+import { getDb, isDatabaseHealthy, markDbUnhealthy, markDbHealthy } from "../../../db/client";
 import { users } from "../../../db/schema";
 import { verifyToken } from "../../../auth";
 import { eq } from "drizzle-orm";
@@ -29,18 +29,21 @@ export async function sessionRoute(request: Request): Promise<Response> {
 
   let user: any = null;
 
-  try {
-    const db = getDb();
-    await db
-      .update(users)
-      .set({ lastActive: new Date() })
-      .where(eq(users.id, payload.userId));
+  if (isDatabaseHealthy()) {
+    try {
+      const db = getDb();
+      await db
+        .update(users)
+        .set({ lastActive: new Date() })
+        .where(eq(users.id, payload.userId));
 
-    user = await db.query.users.findFirst({
-      where: eq(users.id, payload.userId),
-    });
-  } catch (err) {
-    console.warn("⚠️ Session DB query timed out (using serverStore fallback)");
+      user = await db.query.users.findFirst({
+        where: eq(users.id, payload.userId),
+      });
+      if (user) markDbHealthy();
+    } catch (err) {
+      markDbUnhealthy();
+    }
   }
 
   // Fallback: try serverStore for ANY user (not just admin) when DB is slow
