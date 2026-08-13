@@ -1,8 +1,6 @@
-import { getDb } from "../../../db/client";
-import { users } from "../../../db/schema";
 import { hashPassword } from "../../../auth";
-import { eq } from "drizzle-orm";
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 export async function resetPasswordRoute(request: Request): Promise<Response> {
   try {
@@ -24,10 +22,20 @@ export async function resetPasswordRoute(request: Request): Promise<Response> {
       );
     }
 
-    const db = getDb();
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, emailLower),
-    });
+    let user: any = null;
+    try {
+      const { data: sUser } = await supabase.from("users").select("*").eq("email", emailLower).maybeSingle();
+      if (sUser) {
+        user = {
+          ...sUser,
+          resetPasswordCode: sUser.reset_password_code,
+        };
+      }
+    } catch (sErr) {}
+
+    if (!user) {
+      user = serverStore.getUserByEmail(emailLower);
+    }
 
     if (!user) {
       return new Response(
@@ -46,26 +54,6 @@ export async function resetPasswordRoute(request: Request): Promise<Response> {
     const passwordHash = await hashPassword(newPassword);
 
     try {
-      await db
-        .update(users)
-        .set({
-          passwordHash,
-          resetPasswordCode: null,
-        })
-        .where(eq(users.id, user.id));
-    } catch (dbErr) {
-      console.warn("⚠️ DB update warning in resetPasswordRoute:", dbErr);
-    }
-
-    // Sync to serverStore
-    serverStore.updateUser(user.id, {
-      passwordHash,
-      resetPasswordCode: null,
-    });
-
-    // Sync to Supabase via HTTPS REST
-    try {
-      const { supabase } = await import("../../../db/supabase-client");
       await supabase
         .from("users")
         .update({
@@ -76,6 +64,12 @@ export async function resetPasswordRoute(request: Request): Promise<Response> {
     } catch (sErr) {
       console.warn("⚠️ Supabase sync warning in resetPasswordRoute:", sErr);
     }
+
+    // Sync to serverStore
+    serverStore.updateUser(user.id, {
+      passwordHash,
+      resetPasswordCode: null,
+    });
 
     return new Response(
       JSON.stringify({

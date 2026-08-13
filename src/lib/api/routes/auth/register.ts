@@ -52,15 +52,7 @@ export async function registerRoute(request: Request): Promise<Response> {
     }
 
     if (!existingUser) {
-      try {
-        const db = getDb();
-        existingUser = await db.query.users.findFirst({
-          where: eq(users.email, emailLower),
-        });
-      } catch (dbErr) {
-        console.warn("⚠️ Database query timed out / blocked locally during registration.");
-        existingUser = serverStore.getUserByEmail(emailLower);
-      }
+      existingUser = serverStore.getUserByEmail(emailLower);
     }
 
     if (existingUser) {
@@ -93,7 +85,7 @@ export async function registerRoute(request: Request): Promise<Response> {
 
     // 1. Sync to Supabase REST API (Primary persistent store)
     try {
-      const { data: insertedSupabase, error: sInsertErr } = await supabase.from("users").upsert({
+      const { data: insertedSupabase } = await supabase.from("users").upsert({
         id: newUserId,
         name: name.trim(),
         email: emailLower,
@@ -117,29 +109,6 @@ export async function registerRoute(request: Request): Promise<Response> {
       }
     } catch (sErr) {
       console.warn("⚠️ Supabase HTTPS sync warning:", sErr);
-    }
-
-    // 2. Try Drizzle direct DB connection
-    try {
-      const db = getDb();
-      await db
-        .insert(users)
-        .values({
-          id: newUserId,
-          name: name.trim(),
-          email: emailLower,
-          passwordHash,
-          role: "student",
-          status: "active",
-          joinedAt: new Date(),
-          lastActive: new Date(),
-          isEmailVerified: false,
-          emailVerificationCode: verificationCode,
-          phone: phone || null,
-        })
-        .onConflictDoNothing();
-    } catch (dbErr) {
-      console.warn("⚠️ Database insert timed out locally.");
     }
 
     // 3. Sync to serverStore memory cache

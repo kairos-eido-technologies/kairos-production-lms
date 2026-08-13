@@ -29,56 +29,40 @@ export async function sessionRoute(request: Request): Promise<Response> {
 
   let user: any = null;
 
-  if (isDatabaseHealthy()) {
-    try {
-      const db = getDb();
-      await db
-        .update(users)
-        .set({ lastActive: new Date() })
-        .where(eq(users.id, payload.userId));
+  // 1. Primary source: Supabase REST API
+  try {
+    const { supabase } = await import("../../../db/supabase-client");
+    const { data: sUser } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", payload.userId)
+      .maybeSingle();
 
-      user = await db.query.users.findFirst({
-        where: eq(users.id, payload.userId),
+    if (sUser) {
+      user = {
+        ...sUser,
+        joinedAt: sUser.joined_at ? new Date(sUser.joined_at) : new Date(),
+        lastActive: new Date(),
+        isEmailVerified: sUser.is_email_verified ?? true,
+        phone: sUser.phone,
+        group: sUser.group_name || sUser.group,
+      };
+      serverStore.saveUser({
+        id: sUser.id,
+        name: sUser.name,
+        email: sUser.email,
+        role: sUser.role,
+        status: sUser.status,
+        joinedAt: sUser.joined_at,
+        isEmailVerified: sUser.is_email_verified ?? true,
+        phone: sUser.phone,
       });
-      if (user) markDbHealthy();
-    } catch (err) {
-      markDbUnhealthy();
-    }
-  }
 
-  // Fallback 1: Supabase REST API
-  if (!user) {
-    try {
-      const { supabase } = await import("../../../db/supabase-client");
-      const { data: sUser } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", payload.userId)
-        .maybeSingle();
-
-      if (sUser) {
-        user = {
-          ...sUser,
-          joinedAt: sUser.joined_at ? new Date(sUser.joined_at) : new Date(),
-          lastActive: new Date(),
-          isEmailVerified: sUser.is_email_verified ?? true,
-          phone: sUser.phone,
-          group: sUser.group_name || sUser.group,
-        };
-        serverStore.saveUser({
-          id: sUser.id,
-          name: sUser.name,
-          email: sUser.email,
-          role: sUser.role,
-          status: sUser.status,
-          joinedAt: sUser.joined_at,
-          isEmailVerified: sUser.is_email_verified ?? true,
-          phone: sUser.phone,
-        });
-      }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase session query warning:", sErr);
+      // Update last_active in Supabase
+      supabase.from("users").update({ last_active: new Date().toISOString() }).eq("id", sUser.id).then();
     }
+  } catch (sErr) {
+    console.warn("⚠️ Supabase session query warning:", sErr);
   }
 
   // Fallback 2: try serverStore for ANY user when DB and Supabase fail

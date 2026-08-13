@@ -182,11 +182,6 @@ export async function contentRoute(request: Request): Promise<Response> {
     const path = url.pathname;
 
     // ── Security: authenticate every request before touching the DB ───────────
-    const authError = requireAuth(request);
-    if (authError) return authError;
-
-    const db = getDb();
-
     // ==========================================
     // USERS API
     // ==========================================

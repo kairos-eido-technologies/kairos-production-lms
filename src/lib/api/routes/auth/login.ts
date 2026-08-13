@@ -19,47 +19,36 @@ export async function loginRoute(request: Request): Promise<Response> {
     const emailLower = email.toLowerCase().trim();
     let user: any = null;
 
+    // 1. Supabase HTTPS REST API (Primary fast persistent store)
     try {
-      const db = getDb();
-      user = await db.query.users.findFirst({
-        where: eq(users.email, emailLower),
-      });
-    } catch (dbErr) {
-      console.warn("⚠️ Database query timed out / blocked locally during login.");
-    }
+      const { data, error } = await supabase
+        .from("users")
+        .select("*")
+        .eq("email", emailLower)
+        .maybeSingle();
 
-    if (!user) {
-      // Fallback 1: Supabase HTTPS REST API (always reachable, persistent store)
-      try {
-        const { supabase } = await import("../../../db/supabase-client");
-        const { data, error } = await supabase
-          .from("users")
-          .select("*")
-          .eq("email", emailLower)
-          .maybeSingle();
-        if (data && !error) {
-          user = {
-            ...data,
-            passwordHash: data.password_hash || data.passwordHash,
-            joinedAt: data.joined_at || data.joinedAt,
-            isEmailVerified: data.is_email_verified ?? data.isEmailVerified ?? true,
-            emailVerificationCode: data.email_verification_code || data.emailVerificationCode,
-          };
-          serverStore.saveUser({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            passwordHash: user.passwordHash,
-            role: user.role,
-            status: user.status,
-            joinedAt: user.joinedAt,
-            isEmailVerified: user.isEmailVerified ?? false,
-            phone: user.phone || null,
-          });
-        }
-      } catch (sErr) {
-        console.warn("⚠️ Supabase HTTPS fallback failed during login:", sErr);
+      if (data && !error) {
+        user = {
+          ...data,
+          passwordHash: data.password_hash || data.passwordHash,
+          joinedAt: data.joined_at || data.joinedAt,
+          isEmailVerified: data.is_email_verified ?? data.isEmailVerified ?? true,
+          emailVerificationCode: data.email_verification_code || data.emailVerificationCode,
+        };
+        serverStore.saveUser({
+          id: user.id,
+          name: user.name,
+          email: user.email,
+          passwordHash: user.passwordHash,
+          role: user.role,
+          status: user.status,
+          joinedAt: user.joinedAt,
+          isEmailVerified: user.isEmailVerified ?? false,
+          phone: user.phone || null,
+        });
       }
+    } catch (sErr) {
+      console.warn("⚠️ Supabase HTTPS query failed during login:", sErr);
     }
 
     if (!user) {
@@ -174,29 +163,10 @@ export async function loginRoute(request: Request): Promise<Response> {
     }
 
     try {
-      const db = getDb();
-      // Update lastActive and ensure user is persisted in Postgres DB
-      await db
-        .insert(users)
-        .values({
-          id: user.id,
-          name: user.name,
-          email: user.email.toLowerCase().trim(),
-          passwordHash: user.passwordHash,
-          role: user.role || "student",
-          status: user.status || "active",
-          joinedAt: user.joinedAt ? new Date(user.joinedAt) : new Date(),
-          lastActive: new Date(),
-          isEmailVerified: user.isEmailVerified ?? true,
-          phone: user.phone || null,
-        })
-        .onConflictDoUpdate({
-          target: users.id,
-          set: { lastActive: new Date() },
-        });
-    } catch (dbErr) {
-      console.warn("⚠️ Database update lastActive timed out during login:", dbErr);
-    }
+      await supabase.from("users").update({
+        last_active: new Date().toISOString(),
+      }).eq("id", user.id);
+    } catch (sErr) {}
 
     serverStore.saveUser({
       ...user,

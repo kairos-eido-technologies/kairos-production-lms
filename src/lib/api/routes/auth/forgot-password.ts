@@ -1,9 +1,6 @@
-import { getDb } from "../../../db/client";
-import { users } from "../../../db/schema";
-import { eq } from "drizzle-orm";
 import { sendPasswordResetEmail } from "../../../mail";
-
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 export async function forgotPasswordRoute(request: Request): Promise<Response> {
   try {
@@ -20,12 +17,12 @@ export async function forgotPasswordRoute(request: Request): Promise<Response> {
 
     let user: any = null;
     try {
-      const db = getDb();
-      user = await db.query.users.findFirst({
-        where: eq(users.email, emailLower),
-      });
-    } catch (dbErr) {
-      console.warn("⚠️ DB query warning in forgotPasswordRoute:", dbErr);
+      const { data: sUser } = await supabase.from("users").select("*").eq("email", emailLower).maybeSingle();
+      if (sUser) {
+        user = sUser;
+      }
+    } catch (sErr) {
+      console.warn("⚠️ Supabase query warning in forgotPasswordRoute:", sErr);
     }
 
     if (!user) {
@@ -42,14 +39,8 @@ export async function forgotPasswordRoute(request: Request): Promise<Response> {
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     try {
-      const db = getDb();
-      await db
-        .update(users)
-        .set({ resetPasswordCode: resetCode })
-        .where(eq(users.id, user.id));
-    } catch (dbErr) {
-      console.warn("⚠️ DB update warning in forgotPasswordRoute:", dbErr);
-    }
+      await supabase.from("users").update({ reset_password_code: resetCode }).eq("id", user.id);
+    } catch (sErr) {}
 
     serverStore.updateUser(user.id, { resetPasswordCode: resetCode });
 

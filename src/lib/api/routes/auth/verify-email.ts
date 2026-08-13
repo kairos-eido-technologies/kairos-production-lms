@@ -41,17 +41,27 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
 
     let dbUser: any = null;
     try {
-      const db = getDb();
       if (payload?.userId) {
-        dbUser = await db.query.users.findFirst({
-          where: eq(users.id, payload.userId),
-        });
+        const { data: sUser } = await supabase
+          .from("users")
+          .select("*")
+          .eq("id", payload.userId)
+          .maybeSingle();
+
+        if (sUser) {
+          dbUser = {
+            ...sUser,
+            emailVerificationCode: sUser.email_verification_code,
+            isEmailVerified: sUser.is_email_verified,
+            passwordHash: sUser.password_hash,
+          };
+        }
       }
-    } catch (dbErr) {
-      console.warn("⚠️ Database query timed out during verifyEmailRoute:", dbErr);
+    } catch (sErr) {
+      console.warn("⚠️ Supabase query warning during verifyEmailRoute:", sErr);
     }
 
-    // Check code match if DB user exists and has a stored code
+    // Check code match if user exists and has a stored code
     const storeUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail);
     const expectedCode = dbUser?.emailVerificationCode || storeUser?.emailVerificationCode;
 
@@ -62,42 +72,23 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       );
     }
 
-    // Attempt DB update or insert if user was created during DB fallback
+    // Attempt Supabase update
     const targetUserId = dbUser?.id || storeUser?.id || userId;
     const targetEmail = dbUser?.email || storeUser?.email || userEmail;
     const targetHash = dbUser?.passwordHash || storeUser?.passwordHash || "";
 
     try {
-      const db = getDb();
-      if (dbUser) {
-        await db
-          .update(users)
-          .set({ isEmailVerified: true, emailVerificationCode: null })
-          .where(eq(users.id, dbUser.id));
-      } else if (targetEmail) {
-        // User was registered in serverStore during DB latency — insert into DB now!
-        await db
-          .insert(users)
-          .values({
-            id: targetUserId !== "STU-VERIFIED" ? targetUserId : `STU-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
-            name: storeUser?.name || "Student User",
-            email: targetEmail.toLowerCase().trim(),
-            passwordHash: targetHash,
-            role: storeUser?.role || "student",
-            status: "active",
-            joinedAt: new Date(),
-            lastActive: new Date(),
-            isEmailVerified: true,
-            emailVerificationCode: null,
-            phone: storeUser?.phone || null,
+      if (targetUserId && targetUserId !== "STU-VERIFIED") {
+        await supabase
+          .from("users")
+          .update({
+            is_email_verified: true,
+            email_verification_code: null,
           })
-          .onConflictDoUpdate({
-            target: users.email,
-            set: { isEmailVerified: true, emailVerificationCode: null },
-          });
+          .eq("id", targetUserId);
       }
-    } catch (dbErr) {
-      console.warn("⚠️ Database update/insert timed out during verifyEmailRoute:", dbErr);
+    } catch (sErr) {
+      console.warn("⚠️ Supabase update timed out during verifyEmailRoute:", sErr);
     }
 
     // Sync to serverStore
@@ -194,20 +185,15 @@ export async function resendCodeRoute(request: Request): Promise<Response> {
     let dbUser: any = null;
 
     try {
-      const db = getDb();
       if (payload?.userId) {
-        dbUser = await db.query.users.findFirst({
-          where: eq(users.id, payload.userId),
-        });
-        if (dbUser) {
-          await db
-            .update(users)
-            .set({ emailVerificationCode: newCode })
-            .where(eq(users.id, dbUser.id));
+        const { data: sUser } = await supabase.from("users").select("*").eq("id", payload.userId).maybeSingle();
+        if (sUser) {
+          dbUser = sUser;
+          await supabase.from("users").update({ email_verification_code: newCode }).eq("id", sUser.id);
         }
       }
-    } catch (dbErr) {
-      console.warn("⚠️ Database query timed out during resendCodeRoute:", dbErr);
+    } catch (sErr) {
+      console.warn("⚠️ Supabase query warning during resendCodeRoute:", sErr);
     }
 
     const targetEmail = dbUser?.email || payload?.email || "rhemanthjeyanezsingh@karunya.edu.in";

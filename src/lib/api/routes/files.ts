@@ -100,20 +100,20 @@ async function uploadRoute(request: Request): Promise<Response> {
     console.warn("⚠️ File write to disk warning:", fsErr);
   }
 
-  // Attempt DB record creation
+  // Attempt Supabase record creation
   try {
-    const db = getDb();
-    await db.insert(files).values({
+    const { supabase } = await import("../../db/supabase-client");
+    await supabase.from("files").upsert({
       id,
       filename,
       mime,
       size: buffer.length,
-      ownerId,
-      storageType: "local",
-      storageKey,
-    });
-  } catch (dbErr) {
-    console.warn("⚠️ Database insert file metadata timed out (using memory cache):", dbErr);
+      owner_id: ownerId,
+      storage_type: "local",
+      storage_key: storageKey,
+    }, { onConflict: "id" });
+  } catch (sErr) {
+    console.warn("⚠️ Supabase insert file metadata warning:", sErr);
   }
 
   const url = `/api/files?id=${encodeURIComponent(id)}`;
@@ -169,27 +169,28 @@ async function downloadRoute(request: Request): Promise<Response> {
     } catch (_) {}
   }
 
-  // 3. Fall back to DB metadata lookup
+  // 3. Fall back to Supabase metadata lookup
   try {
-    const db = getDb();
-    const row = await db.query.files.findFirst({ where: eq(files.id, id) });
+    const { supabase } = await import("../../db/supabase-client");
+    const { data: row } = await supabase.from("files").select("*").eq("id", id).maybeSingle();
     if (row) {
+      const storageKey = row.storage_key || row.storageKey;
       for (const dir of diskPaths) {
-        const filePath = path.join(dir, row.storageKey);
+        const filePath = path.join(dir, storageKey);
         try {
           const data = await fs.readFile(filePath);
           return new Response(data, {
             status: 200,
             headers: {
               "content-type": row.mime || "application/octet-stream",
-              "content-disposition": `inline; filename="${row.filename.replace(/"/g, '"')}"`,
+              "content-disposition": `inline; filename="${(row.filename || "file").replace(/"/g, '"')}"`,
             },
           });
         } catch (_) {}
       }
     }
-  } catch (dbErr) {
-    console.warn("⚠️ Database file lookup warning:", dbErr);
+  } catch (sErr) {
+    console.warn("⚠️ Supabase file lookup warning:", sErr);
   }
 
   return new Response(JSON.stringify({ error: "File not found" }), { status: 404, headers: { "content-type": "application/json" } });

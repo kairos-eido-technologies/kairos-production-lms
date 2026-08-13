@@ -78,11 +78,12 @@ export async function pptxSlidesRoute(request: Request): Promise<Response> {
 
   try {
     // Look up file record
-    const db = getDb();
-    const row = await db.query.files.findFirst({ where: eq(files.id, fileId) });
+    const { supabase } = await import("../../db/supabase-client");
+    const { data: row } = await supabase.from("files").select("*").eq("id", fileId).maybeSingle();
     if (!row) return json({ error: "File not found" }, 404);
 
-    const pptxPath = path.join(process.cwd(), "uploads", row.storageKey);
+    const storageKey = row.storage_key || row.storageKey;
+    const pptxPath = path.join(process.cwd(), "uploads", storageKey);
 
     // Check cache: if PNG files already exist for this fileId, return them
     const cacheDir = path.join(process.cwd(), "uploads", "pptx-cache", fileId);
