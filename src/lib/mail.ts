@@ -1,5 +1,6 @@
 import nodemailer from "nodemailer";
 import "dotenv/config";
+import dns from "dns";
 
 const smtpHost = process.env.SMTP_HOST || "";
 const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
