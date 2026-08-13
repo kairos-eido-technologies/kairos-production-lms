@@ -41,13 +41,14 @@ export function getDb() {
       "[DATABASE] DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env file."
     );
   }
-  if (!client) {
+  if (!client || process.env.VERCEL) {
     client = postgres(connectionString, {
       prepare: false,
       ssl: "require",
-      connect_timeout: 5, // 5 seconds connect timeout for direct Supabase connections
-      idle_timeout: 20,   // Close idle connections after 20s
-      max_lifetime: 60 * 5, // Reconnect after 5 minutes
+      max: process.env.VERCEL ? 1 : 5,
+      connect_timeout: 2, // 2 seconds fast timeout
+      idle_timeout: 1,   // Close idle connections immediately in serverless
+      max_lifetime: 30,  // Reconnect short-lived sockets
     });
   }
   return drizzle(client, { schema });

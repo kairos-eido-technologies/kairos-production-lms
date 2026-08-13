@@ -1,4 +1,5 @@
 import { getDb, isDatabaseHealthy, markDbUnhealthy, markDbHealthy } from "../../db/client";
+import { supabase } from "../../db/supabase-client";
 import {
   courses,
   sections,
@@ -1711,6 +1712,13 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/progress -> list all progress entries
     if (request.method === "GET" && path === "/api/progress") {
       let progressRecord: Record<string, string[]> = {};
+      if (!isDatabaseHealthy()) {
+        return new Response(JSON.stringify({ progress: progressRecord }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allProgress = await db.select().from(progress);
         for (const p of allProgress) {
@@ -1720,9 +1728,9 @@ export async function contentRoute(request: Request): Promise<Response> {
             progressRecord[key].push(p.contentItemId);
           }
         }
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/progress (using serverStore fallback)");
-        // progressRecord remains {} — client will use its own in-memory state
+        markDbUnhealthy();
       }
 
       return new Response(JSON.stringify({ progress: progressRecord }), {
@@ -1794,6 +1802,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/notifications -> list all notifications
     if (request.method === "GET" && path === "/api/notifications") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getNotifications();
+        return new Response(JSON.stringify({ notifications: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allNotifs = await db.select().from(notifications);
         mapped = allNotifs.map((n) => {
@@ -1809,9 +1825,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           serverStore.addNotification(item);
           return item;
         });
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/notifications (using serverStore fallback)");
-        // Merge serverStore fallback
+        markDbUnhealthy();
         mapped = serverStore.getNotifications();
       }
 
@@ -1883,6 +1899,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/messages -> list all messages
     if (request.method === "GET" && path === "/api/messages") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getMessages();
+        return new Response(JSON.stringify({ messages: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allMsgs = await db.select().from(messages);
         mapped = allMsgs.map((m) => {
@@ -1898,8 +1922,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           serverStore.addMessage(item);
           return item;
         });
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/messages (using serverStore fallback)");
+        markDbUnhealthy();
       }
 
       const storeMsgs = serverStore.getMessages();
