@@ -642,7 +642,7 @@ export async function contentRoute(request: Request): Promise<Response> {
           for (const e of courseEnrollments) {
             studentAccess[e.studentId] = {
               accessMode: e.accessMode,
-              endDate: e.endDate ? e.endDate.toISOString().slice(0, 10) : undefined,
+              endDate: e.endDate ? (typeof e.endDate === "string" ? e.endDate.slice(0, 10) : e.endDate.toISOString().slice(0, 10)) : undefined,
             };
           }
         }
@@ -651,8 +651,8 @@ export async function contentRoute(request: Request): Promise<Response> {
 
         return {
           ...c,
-          startDate: c.startDate ? c.startDate.toISOString().slice(0, 10) : "",
-          endDate: c.endDate ? c.endDate.toISOString().slice(0, 10) : "",
+          startDate: c.startDate ? (typeof c.startDate === "string" ? c.startDate.slice(0, 10) : c.startDate.toISOString().slice(0, 10)) : "",
+          endDate: c.endDate ? (typeof c.endDate === "string" ? c.endDate.slice(0, 10) : c.endDate.toISOString().slice(0, 10)) : "",
           studentIds: isAuthenticated ? courseEnrollments.map((e) => e.studentId) : [],
           studentAccess: isAuthenticated ? studentAccess : {},
           sections: courseSections
