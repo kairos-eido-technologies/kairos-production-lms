@@ -255,6 +255,7 @@ interface DataState {
   resetStudentSubmissions: (assessmentId: string, studentId: string) => Promise<void>;
   extraAttempts: Record<string, number>;
   grantExtraAttempt: (assessmentId: string, studentId: string, count?: number) => void;
+  loadExtraAttempts: (map: Record<string, number>) => void;
 
   // certificates
   requestCertificate: (studentId: string, courseId: string, score: number, note?: string, proctorLog?: ProctorEventRecord[]) => void;
@@ -893,7 +894,8 @@ export const useData = create<DataState>()((set, get) => ({
             if (a && a.isFinal && pct >= a.passingScore) {
               setTimeout(() => maybeRequestCert(get, sub.studentId, a.courseId, pct, sub.proctorEvents), 0);
             }
-            return { submissions: updated, notifications: [note, ...s.notifications] };
+            get().notify(sub.studentId, "Quiz graded", `Your submission scored ${pct}% (${earned}/${max}).`);
+            return { submissions: updated };
           }
           return { submissions: updated };
         });
@@ -902,6 +904,13 @@ export const useData = create<DataState>()((set, get) => ({
       extraAttempts: {},
       grantExtraAttempt: (assessmentId, studentId, count = 1) => {
         const key = `${studentId}:${assessmentId}`;
+        // Persist to server immediately
+        fetch("/api/extra-attempts", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ studentId, assessmentId, count }),
+        }).catch((err) => console.error("grantExtraAttempt API error", err));
+
         set((s) => ({
           extraAttempts: {
             ...s.extraAttempts,
@@ -915,7 +924,35 @@ export const useData = create<DataState>()((set, get) => ({
         }
       },
 
+      loadExtraAttempts: (map) => set({ extraAttempts: map }),
+
+      resetStudentSubmissions: async (assessmentId, studentId) => {
+        try {
+          const resp = await fetch("/api/reset-submissions", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ studentId, assessmentId }),
+          });
+          if (!resp.ok) throw new Error("Failed to reset submissions");
+        } catch (err) {
+          console.error("resetStudentSubmissions error", err);
+        }
+        // Always update local state regardless of API outcome
+        set((s) => ({
+          submissions: s.submissions.filter(
+            (sub) => !(sub.studentId === studentId && sub.assessmentId === assessmentId)
+          ),
+          extraAttempts: (() => {
+            const key = `${studentId}:${assessmentId}`;
+            const updated = { ...s.extraAttempts };
+            delete updated[key];
+            return updated;
+          })(),
+        }));
+      },
+
       requestCertificate: (studentId, courseId, score, note, proctorLog) => {
+
         const id = generateCertificateId(get().certificates);
         const cert: Certificate = {
           id, studentId, courseId, score,
@@ -1185,13 +1222,6 @@ export const useData = create<DataState>()((set, get) => ({
           const json = await resp.json();
           if (json.announcement) {
             set((s) => ({ announcements: [json.announcement, ...s.announcements] }));
-            const notifsResp = await fetch("/api/notifications");
-            if (notifsResp.ok) {
-              const notifsJson = await notifsResp.json();
-              if (notifsJson.notifications) {
-                set({ notifications: notifsJson.notifications });
-              }
-            }
           }
         } catch (err) {
           console.error("addAnnouncement error", err);

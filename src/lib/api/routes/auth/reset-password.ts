@@ -2,6 +2,7 @@ import { getDb } from "../../../db/client";
 import { users } from "../../../db/schema";
 import { hashPassword } from "../../../auth";
 import { eq } from "drizzle-orm";
+import { serverStore } from "../../../db/server-store";
 
 export async function resetPasswordRoute(request: Request): Promise<Response> {
   try {
@@ -44,13 +45,37 @@ export async function resetPasswordRoute(request: Request): Promise<Response> {
 
     const passwordHash = await hashPassword(newPassword);
 
-    await db
-      .update(users)
-      .set({
-        passwordHash,
-        resetPasswordCode: null,
-      })
-      .where(eq(users.id, user.id));
+    try {
+      await db
+        .update(users)
+        .set({
+          passwordHash,
+          resetPasswordCode: null,
+        })
+        .where(eq(users.id, user.id));
+    } catch (dbErr) {
+      console.warn("⚠️ DB update warning in resetPasswordRoute:", dbErr);
+    }
+
+    // Sync to serverStore
+    serverStore.updateUser(user.id, {
+      passwordHash,
+      resetPasswordCode: null,
+    });
+
+    // Sync to Supabase via HTTPS REST
+    try {
+      const { supabase } = await import("../../../db/supabase-client");
+      await supabase
+        .from("users")
+        .update({
+          password_hash: passwordHash,
+          reset_password_code: null,
+        })
+        .eq("id", user.id);
+    } catch (sErr) {
+      console.warn("⚠️ Supabase sync warning in resetPasswordRoute:", sErr);
+    }
 
     return new Response(
       JSON.stringify({

@@ -46,26 +46,7 @@ const emptyDraft: Draft = { name: "", email: "", password: "", role: "student", 
 function UserManagement() {
   const { users, courses, assessments, submissions, certificates, progress, assignCourse, addUser, updateUser, deleteUser, sendMessage } = useData();
 
-  useEffect(() => {
-    let active = true;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/users");
-        if (res.ok && active) {
-          const json = await res.json();
-          if (json.users) {
-            useData.setState({ users: json.users });
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load users on mount", err);
-      }
-    };
-    load();
-    return () => {
-      active = false;
-    };
-  }, []);
+
 
   const [query, setQuery] = useState("");
   const [roleTab, setRoleTab] = useState<"all" | "idle" | Role>("all");

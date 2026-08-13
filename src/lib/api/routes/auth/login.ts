@@ -109,6 +109,14 @@ export async function loginRoute(request: Request): Promise<Response> {
       );
     }
 
+    if (!user.passwordHash) {
+      // Fallback lookup from serverStore if DB query returned user without hash
+      const storeUser = serverStore.getUserByEmail(emailLower);
+      if (storeUser?.passwordHash) {
+        user.passwordHash = storeUser.passwordHash;
+      }
+    }
+
     if (user.passwordHash) {
       const passwordValid = await verifyPassword(password, user.passwordHash);
       if (!passwordValid) {
@@ -117,6 +125,12 @@ export async function loginRoute(request: Request): Promise<Response> {
           { status: 401, headers: { "content-type": "application/json" } }
         );
       }
+    } else {
+      // Security enforcement: account with no password hash cannot authenticate
+      return new Response(
+        JSON.stringify({ error: "Invalid email or password" }),
+        { status: 401, headers: { "content-type": "application/json" } }
+      );
     }
 
     if (user.status === "inactive") {
@@ -128,16 +142,32 @@ export async function loginRoute(request: Request): Promise<Response> {
 
     try {
       const db = getDb();
+      // Update lastActive and ensure user is persisted in Postgres DB
       await db
-        .update(users)
-        .set({ lastActive: new Date() })
-        .where(eq(users.id, user.id));
+        .insert(users)
+        .values({
+          id: user.id,
+          name: user.name,
+          email: user.email.toLowerCase().trim(),
+          passwordHash: user.passwordHash,
+          role: user.role || "student",
+          status: user.status || "active",
+          joinedAt: user.joinedAt ? new Date(user.joinedAt) : new Date(),
+          lastActive: new Date(),
+          isEmailVerified: user.isEmailVerified ?? true,
+          phone: user.phone || null,
+        })
+        .onConflictDoUpdate({
+          target: users.id,
+          set: { lastActive: new Date() },
+        });
     } catch (dbErr) {
       console.warn("⚠️ Database update lastActive timed out during login:", dbErr);
     }
 
     serverStore.saveUser({
       ...user,
+      passwordHash: user.passwordHash,
       lastActive: new Date().toISOString(),
     });
 

@@ -160,6 +160,21 @@ function requireAuth(request: Request): Response | null {
   return null; // null = authorized
 }
 
+/**
+ * Role-Based Access Control (RBAC) Guard
+ * Ensures only authorized roles (e.g. admin or teacher) can execute mutation endpoints
+ */
+function requireRole(request: Request, allowedRoles: Array<"admin" | "teacher" | "student">): Response | null {
+  const user = (request as any).user;
+  if (!user || !allowedRoles.includes(user.role)) {
+    return new Response(JSON.stringify({ error: "Forbidden: Insufficient privileges" }), {
+      status: 403,
+      headers: { "content-type": "application/json" },
+    });
+  }
+  return null;
+}
+
 export async function contentRoute(request: Request): Promise<Response> {
   try {
     const url = new URL(request.url);
@@ -181,6 +196,15 @@ export async function contentRoute(request: Request): Promise<Response> {
       try {
         const allUsers = await db.select().from(users);
         const allEnrollments = await db.select().from(enrollments);
+
+        // Pre-build O(1) Map index for enrollments
+        const enrollmentsMap = new Map<string, string[]>();
+        for (const e of allEnrollments) {
+          const list = enrollmentsMap.get(e.studentId) || [];
+          list.push(e.courseId);
+          enrollmentsMap.set(e.studentId, list);
+        }
+
         mapped = allUsers.map((u) => {
           const item = {
             id: u.id,
@@ -194,7 +218,7 @@ export async function contentRoute(request: Request): Promise<Response> {
             phone: u.phone,
             group: u.group || undefined,
             isEmailVerified: u.isEmailVerified,
-            courseIds: allEnrollments.filter((e) => e.studentId === u.id).map((e) => e.courseId),
+            courseIds: enrollmentsMap.get(u.id) || [],
           };
           serverStore.saveUser(item as any);
           return item;
@@ -309,14 +333,18 @@ export async function contentRoute(request: Request): Promise<Response> {
       if (body.name !== undefined) updateData.name = body.name;
       if (body.email !== undefined) {
         const emailLower = body.email.toLowerCase().trim();
-        const existingWithEmail = await db.query.users.findFirst({
-          where: eq(users.email, emailLower),
-        });
-        if (existingWithEmail && existingWithEmail.id !== id) {
-          return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
-            status: 400,
-            headers: { "content-type": "application/json" },
+        try {
+          const existingWithEmail = await db.query.users.findFirst({
+            where: eq(users.email, emailLower),
           });
+          if (existingWithEmail && existingWithEmail.id !== id) {
+            return new Response(JSON.stringify({ error: "A user with this email already exists" }), {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            });
+          }
+        } catch (dbErr) {
+          console.warn("⚠️ Email uniqueness check timed out for PUT /api/users/:id");
         }
         updateData.email = emailLower;
       }
@@ -329,9 +357,25 @@ export async function contentRoute(request: Request): Promise<Response> {
       if (body.password !== undefined && body.password !== "") {
         updateData.passwordHash = await hashPassword(body.password);
       }
-      await db.update(users).set(updateData).where(eq(users.id, id));
-      const updated = await db.query.users.findFirst({ where: eq(users.id, id) });
-      return new Response(JSON.stringify({ user: updated }), {
+
+      let updated: any = null;
+      try {
+        await db.update(users).set(updateData).where(eq(users.id, id));
+        updated = await db.query.users.findFirst({ where: eq(users.id, id) });
+      } catch (dbErr) {
+        console.warn("⚠️ Database update timed out in PUT /api/users/:id (using serverStore fallback)");
+      }
+
+      // Always sync serverStore for subsequent fallbacks
+      const storeUpdate = {
+        ...updateData,
+        role: updateData.role as any,
+        status: updateData.status as any,
+      };
+      delete storeUpdate.passwordHash; // Don't expose hash
+      const storedUser = serverStore.updateUser(id, storeUpdate) || serverStore.getUserById(id);
+
+      return new Response(JSON.stringify({ user: updated || storedUser }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -341,37 +385,45 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "DELETE" && path.startsWith("/api/users/")) {
       const id = path.slice("/api/users/".length);
 
-      // Check if teacher is assigned to courses
-      const isTeacherOfCourses = await db.query.courses.findFirst({
-        where: eq(courses.teacherId, id),
-      });
-      if (isTeacherOfCourses) {
-        return new Response(
-          JSON.stringify({
-            error: `This instructor is assigned to teach course "${isTeacherOfCourses.name}". Please reassign or delete that course first.`,
-          }),
-          { status: 400, headers: { "content-type": "application/json" } }
-        );
-      }
-
-      // Cleanup student-related records
-      await db.delete(progress).where(eq(progress.studentId, id));
-      await db.delete(certificates).where(eq(certificates.studentId, id));
-      await db.delete(enrollments).where(eq(enrollments.studentId, id));
-      await db.delete(notifications).where(eq(notifications.userId, id));
-      await db.delete(messages).where(or(eq(messages.fromId, id), eq(messages.toId, id)));
-
-      // Cleanup submissions and submission responses
-      const studentSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.studentId, id));
-      const subIds = studentSubmissions.map((s) => s.id);
-      if (subIds.length > 0) {
-        for (const subId of subIds) {
-          await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, subId));
+      try {
+        // Check if teacher is assigned to courses
+        const isTeacherOfCourses = await db.query.courses.findFirst({
+          where: eq(courses.teacherId, id),
+        });
+        if (isTeacherOfCourses) {
+          return new Response(
+            JSON.stringify({
+              error: `This instructor is assigned to teach course "${isTeacherOfCourses.name}". Please reassign or delete that course first.`,
+            }),
+            { status: 400, headers: { "content-type": "application/json" } }
+          );
         }
-        await db.delete(submissions).where(eq(submissions.studentId, id));
+
+        // Cleanup student-related records
+        await db.delete(progress).where(eq(progress.studentId, id));
+        await db.delete(certificates).where(eq(certificates.studentId, id));
+        await db.delete(enrollments).where(eq(enrollments.studentId, id));
+        await db.delete(notifications).where(eq(notifications.userId, id));
+        await db.delete(messages).where(or(eq(messages.fromId, id), eq(messages.toId, id)));
+
+        // Cleanup submissions and submission responses
+        const studentSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.studentId, id));
+        const subIds = studentSubmissions.map((s) => s.id);
+        if (subIds.length > 0) {
+          for (const subId of subIds) {
+            await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, subId));
+          }
+          await db.delete(submissions).where(eq(submissions.studentId, id));
+        }
+
+        await db.delete(users).where(eq(users.id, id));
+      } catch (dbErr) {
+        console.warn("⚠️ Database delete timed out in DELETE /api/users/:id (using serverStore fallback)");
       }
 
-      await db.delete(users).where(eq(users.id, id));
+      // Always clean up serverStore regardless of DB outcome
+      serverStore.deleteUser(id);
+
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -420,7 +472,11 @@ export async function contentRoute(request: Request): Promise<Response> {
         allEnrollments = await db.select().from(enrollments);
       } catch (dbError: any) {
         console.warn("⚠️ Database query timed out in GET /api/courses (using serverStore fallback)");
-        allCourses = serverStore.getCourses();
+        const cached = serverStore.getCourses();
+        return new Response(JSON.stringify({ courses: cached }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
       }
 
       // Anonymous visitors only see active courses marked for preview
@@ -428,8 +484,30 @@ export async function contentRoute(request: Request): Promise<Response> {
         ? allCourses
         : allCourses.filter((c) => c.showInPreview && c.status === "active");
 
+      // Pre-build O(1) Map indices
+      const enrollmentsByCourse = new Map<string, any[]>();
+      for (const e of allEnrollments) {
+        const list = enrollmentsByCourse.get(e.courseId) || [];
+        list.push(e);
+        enrollmentsByCourse.set(e.courseId, list);
+      }
+
+      const sectionsByCourse = new Map<string, any[]>();
+      for (const s of allSections) {
+        const list = sectionsByCourse.get(s.courseId) || [];
+        list.push(s);
+        sectionsByCourse.set(s.courseId, list);
+      }
+
+      const itemsBySection = new Map<string, any[]>();
+      for (const it of allItems) {
+        const list = itemsBySection.get(it.sectionId) || [];
+        list.push(it);
+        itemsBySection.set(it.sectionId, list);
+      }
+
       const coursesWith = filteredCourses.map((c) => {
-        const courseEnrollments = allEnrollments.filter((e) => e.courseId === c.id);
+        const courseEnrollments = enrollmentsByCourse.get(c.id) || [];
         const studentAccess: Record<string, any> = {};
         
         if (isAuthenticated) {
@@ -441,19 +519,19 @@ export async function contentRoute(request: Request): Promise<Response> {
           }
         }
 
+        const courseSections = sectionsByCourse.get(c.id) || [];
+
         return {
           ...c,
           startDate: c.startDate ? c.startDate.toISOString().slice(0, 10) : "",
           endDate: c.endDate ? c.endDate.toISOString().slice(0, 10) : "",
           studentIds: isAuthenticated ? courseEnrollments.map((e) => e.studentId) : [],
           studentAccess: isAuthenticated ? studentAccess : {},
-          sections: allSections
-            .filter((s) => s.courseId === c.id)
+          sections: courseSections
             .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
             .map((s) => ({
               ...s,
-              items: allItems
-                .filter((it) => it.sectionId === s.id)
+              items: (itemsBySection.get(s.id) || [])
                 .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
                 .map((it) => ({
                   ...it,
@@ -464,6 +542,10 @@ export async function contentRoute(request: Request): Promise<Response> {
             })),
         };
       });
+
+      if (isAuthenticated) {
+        serverStore.setCourses(coursesWith);
+      }
 
       return new Response(JSON.stringify({ courses: coursesWith }), {
         status: 200,
@@ -1031,24 +1113,39 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/assessments -> list all assessments and nested questions
     if (request.method === "GET" && path === "/api/assessments") {
-      const allAssessments = await db.select().from(assessments);
-      const allQuestions = await db.select().from(questions);
+      let mapped: any[] = [];
+      try {
+        const allAssessments = await db.select().from(assessments);
+        const allQuestions = await db.select().from(questions);
 
-      const mapped = allAssessments.map((a) => ({
-        ...a,
-        questions: allQuestions
-          .filter((q) => q.assessmentId === a.id)
-          .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
-          .map((q) => ({
-            id: q.id,
-            type: q.type,
-            prompt: q.prompt,
-            options: (q.options as string[]) ?? [],
-            correctIndex: q.correctIndex ?? 0,
-            points: q.points,
-            imageUrl: q.imageUrl ?? undefined,
-          })),
-      }));
+        // Pre-build O(1) Map index for questions
+        const questionsMap = new Map<string, any[]>();
+        for (const q of allQuestions) {
+          const list = questionsMap.get(q.assessmentId) || [];
+          list.push(q);
+          questionsMap.set(q.assessmentId, list);
+        }
+
+        mapped = allAssessments.map((a) => ({
+          ...a,
+          questions: (questionsMap.get(a.id) || [])
+            .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
+            .map((q) => ({
+              id: q.id,
+              type: q.type,
+              prompt: q.prompt,
+              options: (q.options as string[]) ?? [],
+              correctIndex: q.correctIndex ?? 0,
+              points: q.points,
+              imageUrl: q.imageUrl ?? undefined,
+            })),
+        }));
+        // Cache in serverStore for fallback
+        serverStore.setAssessments(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/assessments (using serverStore fallback)");
+        mapped = serverStore.getAssessments();
+      }
 
       return new Response(JSON.stringify({ assessments: mapped }), {
         status: 200,
@@ -1242,25 +1339,40 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/submissions -> list submissions and their question responses
     if (request.method === "GET" && path === "/api/submissions") {
-      const allSubmissions = await db.select().from(submissions);
-      const allResponses = await db.select().from(submissionResponses);
+      let mapped: any[] = [];
+      try {
+        const allSubmissions = await db.select().from(submissions);
+        const allResponses = await db.select().from(submissionResponses);
 
-      const mapped = allSubmissions.map((s) => ({
-        id: s.id,
-        assessmentId: s.assessmentId,
-        studentId: s.studentId,
-        submittedAt: s.submittedAt.toISOString().slice(0, 10),
-        status: s.status as "submitted" | "graded",
-        feedback: s.feedback ?? undefined,
-        proctorEvents: (s.proctorEvents as any[]) ?? undefined,
-        responses: allResponses
-          .filter((r) => r.submissionId === s.id)
-          .map((r) => ({
-            questionId: r.questionId,
-            response: r.response,
-            awarded: r.awarded,
-          })),
-      }));
+        // Pre-build O(1) Map index for responses
+        const responsesMap = new Map<string, any[]>();
+        for (const r of allResponses) {
+          const list = responsesMap.get(r.submissionId) || [];
+          list.push(r);
+          responsesMap.set(r.submissionId, list);
+        }
+
+        mapped = allSubmissions.map((s) => ({
+          id: s.id,
+          assessmentId: s.assessmentId,
+          studentId: s.studentId,
+          submittedAt: s.submittedAt.toISOString().slice(0, 10),
+          status: s.status as "submitted" | "graded",
+          feedback: s.feedback ?? undefined,
+          proctorEvents: (s.proctorEvents as any[]) ?? undefined,
+          responses: (responsesMap.get(s.id) || [])
+            .map((r) => ({
+              questionId: r.questionId,
+              response: r.response,
+              awarded: r.awarded,
+            })),
+        }));
+        // Cache in serverStore for fallback
+        serverStore.setSubmissions(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/submissions (using serverStore fallback)");
+        mapped = serverStore.getSubmissions();
+      }
 
       return new Response(JSON.stringify({ submissions: mapped }), {
         status: 200,
@@ -1418,15 +1530,19 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/progress -> list all progress entries
     if (request.method === "GET" && path === "/api/progress") {
-      const allProgress = await db.select().from(progress);
-
-      const progressRecord: Record<string, string[]> = {};
-      for (const p of allProgress) {
-        const key = `${p.studentId}:${p.courseId}`;
-        if (!progressRecord[key]) progressRecord[key] = [];
-        if (!progressRecord[key].includes(p.contentItemId)) {
-          progressRecord[key].push(p.contentItemId);
+      let progressRecord: Record<string, string[]> = {};
+      try {
+        const allProgress = await db.select().from(progress);
+        for (const p of allProgress) {
+          const key = `${p.studentId}:${p.courseId}`;
+          if (!progressRecord[key]) progressRecord[key] = [];
+          if (!progressRecord[key].includes(p.contentItemId)) {
+            progressRecord[key].push(p.contentItemId);
+          }
         }
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/progress (using serverStore fallback)");
+        // progressRecord remains {} — client will use its own in-memory state
       }
 
       return new Response(JSON.stringify({ progress: progressRecord }), {
@@ -1497,16 +1613,27 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/notifications -> list all notifications
     if (request.method === "GET" && path === "/api/notifications") {
-      const allNotifs = await db.select().from(notifications);
-      const mapped = allNotifs.map((n) => ({
-        id: n.id,
-        userId: n.userId,
-        title: n.title,
-        message: n.message,
-        read: n.read,
-        link: n.link ?? undefined,
-        createdAt: n.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allNotifs = await db.select().from(notifications);
+        mapped = allNotifs.map((n) => {
+          const item = {
+            id: n.id,
+            userId: n.userId,
+            title: n.title,
+            message: n.message,
+            read: n.read,
+            link: n.link ?? undefined,
+            createdAt: n.createdAt.toISOString(),
+          };
+          serverStore.addNotification(item);
+          return item;
+        });
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/notifications (using serverStore fallback)");
+        // Merge serverStore fallback
+        mapped = serverStore.getNotifications();
+      }
 
       return new Response(JSON.stringify({ notifications: mapped }), {
         status: 200,
@@ -2069,6 +2196,82 @@ export async function contentRoute(request: Request): Promise<Response> {
         where: existing ? eq(checkpointProgress.id, existing.id) : eq(checkpointProgress.id, id)
       });
       return new Response(JSON.stringify({ checkpointProgress: created }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    // ==========================================
+    // RESET SUBMISSIONS API
+    // ==========================================
+
+    // POST /api/reset-submissions -> delete all submissions for a student+assessment
+    if (request.method === "POST" && path === "/api/reset-submissions") {
+      const body = await request.json();
+      const { studentId, assessmentId } = body;
+      if (!studentId || !assessmentId) {
+        return new Response(JSON.stringify({ error: "studentId and assessmentId are required" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      try {
+        // Find and delete all submission responses first, then the submissions
+        const studentSubs = await db
+          .select({ id: submissions.id })
+          .from(submissions)
+          .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+
+        for (const sub of studentSubs) {
+          await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, sub.id));
+        }
+        await db
+          .delete(submissions)
+          .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+      } catch (dbErr) {
+        console.warn("⚠️ Database delete timed out in POST /api/reset-submissions (serverStore state cleared)");
+      }
+
+      // Also reset any extra attempts granted for this student+assessment (always)
+      serverStore.resetExtraAttempts(studentId, assessmentId);
+      // Also remove from submissions cache in serverStore
+      const cached = serverStore.getSubmissions();
+      serverStore.setSubmissions(cached.filter(
+        (s: any) => !(s.studentId === studentId && s.assessmentId === assessmentId)
+      ));
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    // ==========================================
+    // EXTRA ATTEMPTS API
+    // ==========================================
+
+    // GET /api/extra-attempts -> return the full extra attempts map
+    if (request.method === "GET" && path === "/api/extra-attempts") {
+      const extraAttempts = serverStore.getExtraAttempts();
+      return new Response(JSON.stringify({ extraAttempts }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    // POST /api/extra-attempts -> grant extra attempt(s) for a student+assessment
+    if (request.method === "POST" && path === "/api/extra-attempts") {
+      const body = await request.json();
+      const { studentId, assessmentId, count = 1 } = body;
+      if (!studentId || !assessmentId) {
+        return new Response(JSON.stringify({ error: "studentId and assessmentId are required" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      const total = serverStore.addExtraAttempt(studentId, assessmentId, Number(count));
+      return new Response(JSON.stringify({ ok: true, total }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });

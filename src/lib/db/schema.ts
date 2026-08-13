@@ -268,7 +268,7 @@ export const usersRelations = relations(users, ({ many }) => ({
   messagesTo: many(messages, { relationName: "to" }),
   notifications: many(notifications),
   certificates: many(certificates),
-  files: many(() => files),
+  files: many(files),
   checkpointProgress: many(checkpointProgress),
 }));
 

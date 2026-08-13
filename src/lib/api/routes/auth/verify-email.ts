@@ -4,6 +4,7 @@ import { verifyToken, generateToken } from "../../../auth";
 import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 function getAuthToken(request: Request): string | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -61,17 +62,42 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       );
     }
 
-    // Attempt DB update
-    if (dbUser) {
-      try {
-        const db = getDb();
+    // Attempt DB update or insert if user was created during DB fallback
+    const targetUserId = dbUser?.id || storeUser?.id || userId;
+    const targetEmail = dbUser?.email || storeUser?.email || userEmail;
+    const targetHash = dbUser?.passwordHash || storeUser?.passwordHash || "";
+
+    try {
+      const db = getDb();
+      if (dbUser) {
         await db
           .update(users)
           .set({ isEmailVerified: true, emailVerificationCode: null })
           .where(eq(users.id, dbUser.id));
-      } catch (dbErr) {
-        console.warn("⚠️ Database update timed out during verifyEmailRoute:", dbErr);
+      } else if (targetEmail) {
+        // User was registered in serverStore during DB latency — insert into DB now!
+        await db
+          .insert(users)
+          .values({
+            id: targetUserId !== "STU-VERIFIED" ? targetUserId : `STU-${Math.random().toString(36).slice(2, 10).toUpperCase()}`,
+            name: storeUser?.name || "Student User",
+            email: targetEmail.toLowerCase().trim(),
+            passwordHash: targetHash,
+            role: storeUser?.role || "student",
+            status: "active",
+            joinedAt: new Date(),
+            lastActive: new Date(),
+            isEmailVerified: true,
+            emailVerificationCode: null,
+            phone: storeUser?.phone || null,
+          })
+          .onConflictDoUpdate({
+            target: users.email,
+            set: { isEmailVerified: true, emailVerificationCode: null },
+          });
       }
+    } catch (dbErr) {
+      console.warn("⚠️ Database update/insert timed out during verifyEmailRoute:", dbErr);
     }
 
     // Sync to serverStore
@@ -79,18 +105,40 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       serverStore.updateUser(storeUser.id, {
         isEmailVerified: true,
         emailVerificationCode: null,
+        passwordHash: targetHash || storeUser.passwordHash,
       });
     } else {
       serverStore.saveUser({
-        id: dbUser?.id || userId,
+        id: targetUserId,
         name: dbUser?.name || "Student User",
-        email: dbUser?.email || userEmail,
+        email: targetEmail,
+        passwordHash: targetHash,
         role: dbUser?.role || "student",
         status: "active",
         joinedAt: new Date().toISOString(),
         isEmailVerified: true,
         emailVerificationCode: null,
       });
+    }
+
+    // Sync to Supabase via HTTPS REST
+    try {
+      if (targetUserId && targetUserId !== "STU-VERIFIED") {
+        await supabase
+          .from("users")
+          .upsert({
+            id: targetUserId,
+            name: dbUser?.name || storeUser?.name || "Student User",
+            email: targetEmail,
+            password_hash: targetHash,
+            role: "student",
+            status: "active",
+            is_email_verified: true,
+            email_verification_code: null,
+          }, { onConflict: "id" });
+      }
+    } catch (sErr) {
+      console.warn("⚠️ Supabase HTTPS sync (verify-email) warning:", sErr);
     }
 
     const finalUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail) || {

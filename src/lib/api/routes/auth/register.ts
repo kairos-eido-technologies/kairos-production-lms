@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
 import { randomUUID } from "crypto";
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 
 export async function registerRoute(request: Request): Promise<Response> {
@@ -87,6 +88,7 @@ export async function registerRoute(request: Request): Promise<Response> {
         id: newUserId,
         name: name.trim(),
         email: emailLower,
+        passwordHash,
         role: "student",
         status: "active",
         joinedAt: new Date(),
@@ -101,11 +103,12 @@ export async function registerRoute(request: Request): Promise<Response> {
       throw new Error("Failed to create user");
     }
 
-    // Always sync registered user into serverStore
+    // Always sync registered user into serverStore & Supabase
     serverStore.saveUser({
       id: createdUserRecord.id,
       name: createdUserRecord.name,
       email: createdUserRecord.email,
+      passwordHash,
       role: createdUserRecord.role || "student",
       status: "active",
       joinedAt: createdUserRecord.joinedAt ? new Date(createdUserRecord.joinedAt).toISOString() : new Date().toISOString(),
@@ -113,6 +116,23 @@ export async function registerRoute(request: Request): Promise<Response> {
       emailVerificationCode: verificationCode,
       phone: createdUserRecord.phone || null,
     });
+
+    try {
+      await supabase.from("users").upsert({
+        id: createdUserRecord.id,
+        name: createdUserRecord.name,
+        email: createdUserRecord.email,
+        password_hash: passwordHash,
+        role: "student",
+        status: "active",
+        joined_at: new Date().toISOString(),
+        is_email_verified: false,
+        email_verification_code: verificationCode,
+        phone: phone || null,
+      }, { onConflict: "id" });
+    } catch (sErr) {
+      console.warn("⚠️ Supabase HTTPS sync warning:", sErr);
+    }
 
     // Send the real verification email
     await sendVerificationEmail(emailLower, verificationCode, name.trim());

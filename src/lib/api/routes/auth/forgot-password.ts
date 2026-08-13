@@ -3,6 +3,8 @@ import { users } from "../../../db/schema";
 import { eq } from "drizzle-orm";
 import { sendPasswordResetEmail } from "../../../mail";
 
+import { serverStore } from "../../../db/server-store";
+
 export async function forgotPasswordRoute(request: Request): Promise<Response> {
   try {
     const body = await request.json();
@@ -16,10 +18,19 @@ export async function forgotPasswordRoute(request: Request): Promise<Response> {
       );
     }
 
-    const db = getDb();
-    const user = await db.query.users.findFirst({
-      where: eq(users.email, emailLower),
-    });
+    let user: any = null;
+    try {
+      const db = getDb();
+      user = await db.query.users.findFirst({
+        where: eq(users.email, emailLower),
+      });
+    } catch (dbErr) {
+      console.warn("⚠️ DB query warning in forgotPasswordRoute:", dbErr);
+    }
+
+    if (!user) {
+      user = serverStore.getUserByEmail(emailLower);
+    }
 
     if (!user) {
       return new Response(
@@ -30,10 +41,17 @@ export async function forgotPasswordRoute(request: Request): Promise<Response> {
 
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    await db
-      .update(users)
-      .set({ resetPasswordCode: resetCode })
-      .where(eq(users.id, user.id));
+    try {
+      const db = getDb();
+      await db
+        .update(users)
+        .set({ resetPasswordCode: resetCode })
+        .where(eq(users.id, user.id));
+    } catch (dbErr) {
+      console.warn("⚠️ DB update warning in forgotPasswordRoute:", dbErr);
+    }
+
+    serverStore.updateUser(user.id, { resetPasswordCode: resetCode });
 
     await sendPasswordResetEmail(user.email, resetCode, user.name);
 

@@ -75,6 +75,8 @@ class ServerStore {
   private discussionRepliesList: any[] = [];
   private videoCheckpointsList: any[] = [];
   private checkpointProgressList: any[] = [];
+  // key = `${studentId}:${assessmentId}`, value = extra attempt count
+  private extraAttemptsMap: Record<string, number> = {};
 
   constructor() {
     this.saveUser(defaultAdmin);
@@ -90,6 +92,7 @@ class ServerStore {
       ...user,
       id: finalId,
       email: user.email.toLowerCase().trim(),
+      passwordHash: user.passwordHash || existing?.passwordHash,
     };
     this.usersMap.set(finalId, merged);
     return merged;
@@ -111,7 +114,11 @@ class ServerStore {
   updateUser(id: string, patch: Partial<ServerUser>) {
     const user = this.usersMap.get(id);
     if (user) {
-      const updated = { ...user, ...patch };
+      const updated = {
+        ...user,
+        ...patch,
+        passwordHash: patch.passwordHash || user.passwordHash,
+      };
       this.usersMap.set(id, updated);
       return updated;
     }
@@ -128,6 +135,9 @@ class ServerStore {
     const existing = this.messagesList.find(m => m.id === msg.id);
     if (!existing) {
       this.messagesList.unshift(msg);
+      if (this.messagesList.length > 1000) {
+        this.messagesList = this.messagesList.slice(0, 1000);
+      }
     }
     return msg;
   }
@@ -146,6 +156,9 @@ class ServerStore {
     const existing = this.notificationsList.find(n => n.id === notif.id);
     if (!existing) {
       this.notificationsList.unshift(notif);
+      if (this.notificationsList.length > 1000) {
+        this.notificationsList = this.notificationsList.slice(0, 1000);
+      }
     }
     return notif;
   }
@@ -210,6 +223,27 @@ class ServerStore {
 
   setCheckpointProgress(list: any[]) { this.checkpointProgressList = list; }
   getCheckpointProgress() { return this.checkpointProgressList; }
+
+  // Extra Attempts
+  getExtraAttempts(): Record<string, number> {
+    return { ...this.extraAttemptsMap };
+  }
+
+  addExtraAttempt(studentId: string, assessmentId: string, count: number) {
+    const key = `${studentId}:${assessmentId}`;
+    this.extraAttemptsMap[key] = (this.extraAttemptsMap[key] ?? 0) + count;
+    return this.extraAttemptsMap[key];
+  }
+
+  getExtraAttemptCount(studentId: string, assessmentId: string): number {
+    const key = `${studentId}:${assessmentId}`;
+    return this.extraAttemptsMap[key] ?? 0;
+  }
+
+  resetExtraAttempts(studentId: string, assessmentId: string) {
+    const key = `${studentId}:${assessmentId}`;
+    delete this.extraAttemptsMap[key];
+  }
 }
 
 // Global singleton across hot-reloads

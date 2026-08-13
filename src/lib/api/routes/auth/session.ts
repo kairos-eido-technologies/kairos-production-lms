@@ -2,6 +2,7 @@ import { getDb } from "../../../db/client";
 import { users } from "../../../db/schema";
 import { verifyToken } from "../../../auth";
 import { eq } from "drizzle-orm";
+import { serverStore } from "../../../db/server-store";
 
 function getTokenFromCookie(request: Request): string | null {
   const cookieHeader = request.headers.get("cookie") ?? "";
@@ -39,9 +40,27 @@ export async function sessionRoute(request: Request): Promise<Response> {
       where: eq(users.id, payload.userId),
     });
   } catch (err) {
-    console.warn("Session DB query warning:", err);
+    console.warn("⚠️ Session DB query warning:", err);
   }
 
+  // Fallback: try serverStore for ANY user (not just admin) when DB is slow
+  if (!user) {
+    const storeUser =
+      serverStore.getUserById(payload.userId) ||
+      serverStore.getUserByEmail(payload.email);
+    if (storeUser) {
+      // Patch dates so they match the DB shape the rest of the app expects
+      user = {
+        ...storeUser,
+        joinedAt: storeUser.joinedAt ? new Date(storeUser.joinedAt) : new Date(),
+        lastActive: storeUser.lastActive ? new Date(storeUser.lastActive) : null,
+      };
+      // Update lastActive in serverStore so it's reflected immediately
+      serverStore.updateUser(storeUser.id, { lastActive: new Date().toISOString() });
+    }
+  }
+
+  // Final hardcoded fallback for default admin account
   if (!user && payload.userId === "ADM01") {
     user = {
       id: "ADM01",
@@ -61,7 +80,7 @@ export async function sessionRoute(request: Request): Promise<Response> {
     );
   }
 
-  const { passwordHash, ...userWithoutPassword } = user;
+  const { passwordHash, emailVerificationCode, resetPasswordCode, ...userWithoutPassword } = user;
   return new Response(
     JSON.stringify({ ok: true, user: userWithoutPassword }),
     { status: 200, headers: { "content-type": "application/json" } },

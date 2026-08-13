@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { promises as fs } from "fs";
 import path from "path";
 import os from "os";
+import { verifyToken } from "../../auth";
 
 function makeId() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
@@ -35,6 +36,21 @@ export async function filesRoute(request: Request): Promise<Response> {
 }
 
 async function uploadRoute(request: Request): Promise<Response> {
+  // Security Guard: Check authentication token
+  const authHeader = request.headers.get("authorization") ?? "";
+  let token: string | null = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) {
+    const cookies = request.headers.get("cookie") ?? "";
+    const match = cookies.match(/(?:^|; )auth_token=([^;]+)/);
+    token = match?.[1] ?? null;
+  }
+  if (!token || !verifyToken(token)) {
+    return new Response(JSON.stringify({ error: "Unauthorized: File upload requires an active session" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
+
   const contentType = request.headers.get("content-type") || "";
   if (!contentType.includes("form-data") && !contentType.includes("multipart")) {
     return new Response(JSON.stringify({ error: "Content-Type must be multipart/form-data" }), { status: 400, headers: { "content-type": "application/json" } });

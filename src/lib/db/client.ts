@@ -24,6 +24,8 @@ export function getDb() {
       prepare: false,
       ssl: "require",
       connect_timeout: 3, // 3 seconds timeout for fast fallback when DB port is blocked locally
+      idle_timeout: 20,   // Close idle connections after 20s
+      max_lifetime: 60 * 5, // Reconnect after 5 minutes
     });
   }
   return drizzle(client, { schema });
