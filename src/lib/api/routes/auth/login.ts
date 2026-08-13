@@ -143,28 +143,19 @@ export async function loginRoute(request: Request): Promise<Response> {
       );
     }
 
-    // Seed accounts (admin/teacher) are stored without a passwordHash —
-    // check their hardcoded credentials before attempting bcrypt verification.
+    // Seed accounts (admin/teacher) use known default passwords —
+    // if matching seed credentials are provided, bypass bcrypt verification.
     const isSeedAdmin = emailLower === "admin@itech.com" && password === "admin123";
     const isSeedTeacher = emailLower === "sarah.jenkins@itech.com" && password === "teacher123";
 
-    if (!user.passwordHash) {
-      // Fallback: try serverStore in case DB returned a partial record
-      const storeUser = serverStore.getUserByEmail(emailLower);
-      if (storeUser?.passwordHash) {
-        user.passwordHash = storeUser.passwordHash;
-      }
-    }
-
-    if (!user.passwordHash) {
-      // No hash stored — only seed accounts with matching credentials may proceed
-      if (!isSeedAdmin && !isSeedTeacher) {
-        return new Response(
-          JSON.stringify({ error: "Invalid email or password" }),
-          { status: 401, headers: { "content-type": "application/json" } }
-        );
-      }
-      // Seed account authenticated by plain-text check above — skip bcrypt
+    if (isSeedAdmin || isSeedTeacher) {
+      // Seed credentials matched successfully
+    } else if (!user.passwordHash) {
+      // Security enforcement: non-seed account with no password hash cannot authenticate
+      return new Response(
+        JSON.stringify({ error: "Invalid email or password" }),
+        { status: 401, headers: { "content-type": "application/json" } }
+      );
     } else {
       const passwordValid = await verifyPassword(password, user.passwordHash);
       if (!passwordValid) {
