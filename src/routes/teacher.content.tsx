@@ -47,7 +47,7 @@ const emptyItem: ItemDraft = { type: "video", title: "", url: "", duration: "", 
 
 const fileSizeLabel = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(bytes > 1024 * 1024 ? 1 : 2)} MB`;
 
-function ContentBuilder() {
+export function ContentBuilder() {
   const { user } = useAuth();
   const {
     courses, assessments, addSection, updateSection, deleteSection, addItem, updateItem, deleteItem, updateAssessment, updateCourse,
