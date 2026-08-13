@@ -45,7 +45,7 @@ export function getDb() {
     client = postgres(connectionString, {
       prepare: false,
       ssl: "require",
-      connect_timeout: 1, // 1 second fast connect probe for zero lag
+      connect_timeout: 5, // 5 seconds connect timeout for direct Supabase connections
       idle_timeout: 20,   // Close idle connections after 20s
       max_lifetime: 60 * 5, // Reconnect after 5 minutes
     });
