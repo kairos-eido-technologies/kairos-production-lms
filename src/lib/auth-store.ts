@@ -18,7 +18,7 @@ interface AuthState {
   resetPassword: (data: { email: string; code: string; newPassword: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
-export const useAuth = create<AuthState>()((set) => ({
+export const useAuth = create<AuthState>()((set, get) => ({
   user: null,
   isLoading: false,
   error: null,
