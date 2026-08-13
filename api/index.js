@@ -1,7 +1,16 @@
-import server from "../dist/server/server.js";
+let serverInstance = null;
+
+async function getServer() {
+  if (!serverInstance) {
+    const mod = await import("../dist/server/server.js");
+    serverInstance = mod.default || mod;
+  }
+  return serverInstance;
+}
 
 export default async function handler(req, res) {
   try {
+    const server = await getServer();
     const protocol = req.headers["x-forwarded-proto"] || "https";
     const host = req.headers["x-forwarded-host"] || req.headers.host || "localhost";
     const fullUrl = `${protocol}://${host}${req.url}`;
@@ -45,6 +54,6 @@ export default async function handler(req, res) {
     console.error("Vercel Serverless Handler Error:", err);
     res.statusCode = 500;
     res.setHeader("content-type", "text/plain");
-    res.end("Internal Server Error");
+    res.end(`Internal Server Error: ${err?.message || err}`);
   }
 }
