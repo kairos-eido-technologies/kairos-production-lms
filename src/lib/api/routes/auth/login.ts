@@ -40,10 +40,10 @@ export async function loginRoute(request: Request): Promise<Response> {
         if (data && !error) {
           user = {
             ...data,
-            passwordHash: data.password_hash,
-            joinedAt: data.joined_at,
-            isEmailVerified: data.is_email_verified,
-            emailVerificationCode: data.email_verification_code,
+            passwordHash: data.password_hash || data.passwordHash,
+            joinedAt: data.joined_at || data.joinedAt,
+            isEmailVerified: data.is_email_verified ?? data.isEmailVerified ?? true,
+            emailVerificationCode: data.email_verification_code || data.emailVerificationCode,
           };
           serverStore.saveUser({
             id: user.id,
