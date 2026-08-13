@@ -3,6 +3,7 @@ import { users } from "../../../db/schema";
 import { hashPassword, verifyPassword, generateToken } from "../../../auth";
 import { eq } from "drizzle-orm";
 import { serverStore } from "../../../db/server-store";
+import { supabase } from "../../../db/supabase-client";
 
 export async function loginRoute(request: Request): Promise<Response> {
   try {

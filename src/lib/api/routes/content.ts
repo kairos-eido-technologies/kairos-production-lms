@@ -1079,6 +1079,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/certificates") {
       const status = url.searchParams.get("status");
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getCertificates();
+        if (status) mapped = mapped.filter((c) => c.status === status);
+        return new Response(JSON.stringify({ certificates: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const rows = status
           ? await db.query.certificates.findMany({ where: eq(certificates.status, status) })
@@ -1091,8 +1100,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           proctorLog: (c.proctorLog as any[]) ?? undefined,
         }));
         serverStore.setCertificates(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/certificates (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getCertificates();
         if (status) mapped = mapped.filter((c) => c.status === status);
       }
@@ -1243,6 +1253,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/assessments -> list all assessments and nested questions
     if (request.method === "GET" && path === "/api/assessments") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getAssessments();
+        return new Response(JSON.stringify({ assessments: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allAssessments = await db.select().from(assessments);
         const allQuestions = await db.select().from(questions);
@@ -1251,28 +1269,34 @@ export async function contentRoute(request: Request): Promise<Response> {
         const questionsMap = new Map<string, any[]>();
         for (const q of allQuestions) {
           const list = questionsMap.get(q.assessmentId) || [];
-          list.push(q);
+          list.push({
+            id: q.id,
+            text: q.text,
+            type: q.type,
+            options: (q.options as string[]) ?? undefined,
+            correctAnswer: q.correctAnswer ?? undefined,
+            points: q.points,
+          });
           questionsMap.set(q.assessmentId, list);
         }
 
         mapped = allAssessments.map((a) => ({
-          ...a,
-          questions: (questionsMap.get(a.id) || [])
-            .sort((x, y) => (x.order ?? 0) - (y.order ?? 0))
-            .map((q) => ({
-              id: q.id,
-              type: q.type,
-              prompt: q.prompt,
-              options: (q.options as string[]) ?? [],
-              correctIndex: q.correctIndex ?? 0,
-              points: q.points,
-              imageUrl: q.imageUrl ?? undefined,
-            })),
+          id: a.id,
+          courseId: a.courseId,
+          title: a.title,
+          description: a.description || undefined,
+          duration: a.duration,
+          attempts: a.attempts,
+          passingScore: a.passingScore,
+          dueDate: a.dueDate ? a.dueDate.toISOString().slice(0, 10) : undefined,
+          isFinal: a.isFinal,
+          questions: questionsMap.get(a.id) || [],
         }));
         // Cache in serverStore for fallback
         serverStore.setAssessments(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/assessments (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getAssessments();
       }
 
@@ -1466,18 +1490,48 @@ export async function contentRoute(request: Request): Promise<Response> {
     // SUBMISSIONS API
     // ==========================================
 
-    // GET /api/submissions -> list submissions and their question responses
+    // GET /api/submissions -> list submissions
     if (request.method === "GET" && path === "/api/submissions") {
+      const studentId = url.searchParams.get("studentId");
+      const assessmentId = url.searchParams.get("assessmentId");
+
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getSubmissions();
+        if (studentId) mapped = mapped.filter((s) => s.studentId === studentId);
+        if (assessmentId) mapped = mapped.filter((s) => s.assessmentId === assessmentId);
+        return new Response(JSON.stringify({ submissions: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
-        const allSubmissions = await db.select().from(submissions);
+        let allSubmissions;
+        if (studentId && assessmentId) {
+          allSubmissions = await db
+            .select()
+            .from(submissions)
+            .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+        } else if (studentId) {
+          allSubmissions = await db.select().from(submissions).where(eq(submissions.studentId, studentId));
+        } else if (assessmentId) {
+          allSubmissions = await db.select().from(submissions).where(eq(submissions.assessmentId, assessmentId));
+        } else {
+          allSubmissions = await db.select().from(submissions);
+        }
+
         const allResponses = await db.select().from(submissionResponses);
 
         // Pre-build O(1) Map index for responses
         const responsesMap = new Map<string, any[]>();
         for (const r of allResponses) {
           const list = responsesMap.get(r.submissionId) || [];
-          list.push(r);
+          list.push({
+            questionId: r.questionId,
+            response: r.response,
+            awarded: r.awarded,
+          });
           responsesMap.set(r.submissionId, list);
         }
 
@@ -1485,22 +1539,19 @@ export async function contentRoute(request: Request): Promise<Response> {
           id: s.id,
           assessmentId: s.assessmentId,
           studentId: s.studentId,
-          submittedAt: s.submittedAt.toISOString().slice(0, 10),
-          status: s.status as "submitted" | "graded",
-          feedback: s.feedback ?? undefined,
-          proctorEvents: (s.proctorEvents as any[]) ?? undefined,
-          responses: (responsesMap.get(s.id) || [])
-            .map((r) => ({
-              questionId: r.questionId,
-              response: r.response,
-              awarded: r.awarded,
-            })),
+          attemptNumber: s.attemptNumber,
+          score: s.score,
+          status: s.status,
+          submittedAt: s.submittedAt ? s.submittedAt.toISOString().slice(0, 10) : "",
+          responses: responsesMap.get(s.id) || [],
         }));
-        // Cache in serverStore for fallback
         serverStore.setSubmissions(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/submissions (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getSubmissions();
+        if (studentId) mapped = mapped.filter((s) => s.studentId === studentId);
+        if (assessmentId) mapped = mapped.filter((s) => s.assessmentId === assessmentId);
       }
 
       return new Response(JSON.stringify({ submissions: mapped }), {
@@ -1939,6 +1990,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/events -> list all events
     if (request.method === "GET" && path === "/api/events") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getEvents();
+        return new Response(JSON.stringify({ events: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allEvents = await db.select().from(events);
         mapped = allEvents.map((e) => ({
@@ -1950,8 +2009,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           createdAt: e.createdAt ? e.createdAt.toISOString() : new Date().toISOString(),
         }));
         serverStore.setEvents(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/events (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getEvents();
       }
 
@@ -2034,6 +2094,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/announcements -> list all announcements
     if (request.method === "GET" && path === "/api/announcements") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getAnnouncements();
+        return new Response(JSON.stringify({ announcements: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allAnnouncements = await db.select().from(announcements);
         mapped = allAnnouncements.map((a) => ({
@@ -2045,8 +2113,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString(),
         }));
         serverStore.setAnnouncements(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/announcements (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getAnnouncements();
       }
 
@@ -2115,6 +2184,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/discussions -> list all discussions
     if (request.method === "GET" && path === "/api/discussions") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getDiscussions();
+        return new Response(JSON.stringify({ discussions: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allDiscussions = await db.select().from(discussions);
         mapped = allDiscussions.map((d) => ({
@@ -2126,8 +2203,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           createdAt: d.createdAt ? d.createdAt.toISOString() : new Date().toISOString(),
         }));
         serverStore.setDiscussions(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/discussions (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getDiscussions();
       }
 
@@ -2175,6 +2253,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/discussion-replies -> list all replies
     if (request.method === "GET" && path === "/api/discussion-replies") {
       let mapped: any[] = [];
+      if (!isDatabaseHealthy()) {
+        mapped = serverStore.getDiscussionReplies();
+        return new Response(JSON.stringify({ discussionReplies: mapped }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         const allReplies = await db.select().from(discussionReplies);
         mapped = allReplies.map((r) => ({
@@ -2185,8 +2271,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
         }));
         serverStore.setDiscussionReplies(mapped);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/discussion-replies (using serverStore fallback)");
+        markDbUnhealthy();
         mapped = serverStore.getDiscussionReplies();
       }
 
@@ -2249,6 +2336,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/video-checkpoints") {
       const contentItemId = url.searchParams.get("contentItemId");
       let rows: any[] = [];
+      if (!isDatabaseHealthy()) {
+        rows = serverStore.getVideoCheckpoints();
+        if (contentItemId) rows = rows.filter((v) => v.contentItemId === contentItemId);
+        return new Response(JSON.stringify({ videoCheckpoints: rows }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         if (contentItemId) {
           rows = await db.select().from(videoCheckpoints).where(eq(videoCheckpoints.contentItemId, contentItemId));
@@ -2256,8 +2352,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           rows = await db.select().from(videoCheckpoints);
         }
         serverStore.setVideoCheckpoints(rows);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/video-checkpoints (using serverStore fallback)");
+        markDbUnhealthy();
         rows = serverStore.getVideoCheckpoints();
         if (contentItemId) rows = rows.filter((v) => v.contentItemId === contentItemId);
       }
@@ -2323,6 +2420,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "GET" && path === "/api/checkpoint-progress") {
       const studentId = url.searchParams.get("studentId");
       let rows: any[] = [];
+      if (!isDatabaseHealthy()) {
+        rows = serverStore.getCheckpointProgress();
+        if (studentId) rows = rows.filter((c) => c.studentId === studentId);
+        return new Response(JSON.stringify({ checkpointProgress: rows }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
       try {
         if (studentId) {
           rows = await db.select().from(checkpointProgress).where(eq(checkpointProgress.studentId, studentId));
@@ -2330,8 +2436,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           rows = await db.select().from(checkpointProgress);
         }
         serverStore.setCheckpointProgress(rows);
+        markDbHealthy();
       } catch (dbErr) {
-        console.warn("⚠️ Database query timed out in GET /api/checkpoint-progress (using serverStore fallback)");
+        markDbUnhealthy();
         rows = serverStore.getCheckpointProgress();
         if (studentId) rows = rows.filter((c) => c.studentId === studentId);
       }
