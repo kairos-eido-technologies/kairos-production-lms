@@ -308,10 +308,30 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
       const isAuthenticated = token ? !!verifyToken(token) : false;
 
-      const allCourses = await db.select().from(courses);
-      const allSections = await db.select().from(sections);
-      const allItems = await db.select().from(contentItems);
-      const allEnrollments = await db.select().from(enrollments);
+      let allCourses: any[] = [];
+      let allSections: any[] = [];
+      let allItems: any[] = [];
+      let allEnrollments: any[] = [];
+
+      try {
+        allCourses = await db.select().from(courses);
+        allSections = await db.select().from(sections);
+        allItems = await db.select().from(contentItems);
+        allEnrollments = await db.select().from(enrollments);
+      } catch (dbError: any) {
+        console.error("Database query failed in GET /api/courses:", dbError?.message || dbError);
+        return new Response(
+          JSON.stringify({
+            courses: [],
+            error: "Database authentication or connection failed. Please verify DATABASE_URL in your .env file.",
+            details: dbError?.message,
+          }),
+          {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }
+        );
+      }
 
       // Anonymous visitors only see active courses marked for preview
       const filteredCourses = isAuthenticated
