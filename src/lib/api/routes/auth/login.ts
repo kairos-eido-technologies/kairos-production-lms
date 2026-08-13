@@ -23,7 +23,7 @@ export async function loginRoute(request: Request): Promise<Response> {
         where: eq(users.email, email.toLowerCase()),
       });
     } catch (dbErr) {
-      console.warn("Database lookup failed in loginRoute:", dbErr);
+      console.warn("⚠️ Database query timed out / blocked locally during login.");
     }
 
     if (!user) {

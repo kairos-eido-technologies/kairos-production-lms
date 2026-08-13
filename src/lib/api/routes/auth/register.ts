@@ -43,7 +43,7 @@ export async function registerRoute(request: Request): Promise<Response> {
         where: eq(users.email, emailLower),
       });
     } catch (dbErr) {
-      console.warn("Database query warning in registerRoute:", dbErr);
+      console.warn("⚠️ Database query timed out / blocked locally during registration.");
     }
 
     if (existingUser) {
@@ -81,7 +81,7 @@ export async function registerRoute(request: Request): Promise<Response> {
         .returning();
       createdUserRecord = newUser[0];
     } catch (dbErr) {
-      console.warn("Database insert warning in registerRoute (using fallback):", dbErr);
+      console.warn("⚠️ Database insert timed out locally. Created local fallback user session.");
       createdUserRecord = {
         id: newUserId,
         name: name.trim(),

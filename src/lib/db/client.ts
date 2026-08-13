@@ -20,7 +20,11 @@ export function getDb() {
     );
   }
   if (!client) {
-    client = postgres(connectionString, { prepare: false, ssl: "require" });
+    client = postgres(connectionString, {
+      prepare: false,
+      ssl: "require",
+      connect_timeout: 3, // 3 seconds timeout for fast fallback when DB port is blocked locally
+    });
   }
   return drizzle(client, { schema });
 }
