@@ -113,7 +113,13 @@ export const useAuth = create<AuthState>()((set) => ({
       });
       const data = await resp.json();
       if (resp.ok && data.ok) {
-        set({ user: data.user as User, isLoading: false });
+        const currentUser = get().user;
+        const updatedUser = data.user
+          ? (data.user as User)
+          : currentUser
+          ? { ...currentUser, isEmailVerified: true }
+          : null;
+        set({ user: updatedUser, isLoading: false });
         return { ok: true };
       }
       throw new Error(data.error || "Verification failed");
