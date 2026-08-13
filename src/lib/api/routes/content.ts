@@ -285,7 +285,7 @@ export async function contentRoute(request: Request): Promise<Response> {
 
       let created: any = null;
 
-      // 1. Save to Supabase REST API
+      // 1. Save to Supabase REST API (Port 443)
       try {
         const { data: insertedS } = await supabase.from("users").upsert({
           id,
@@ -313,31 +313,9 @@ export async function contentRoute(request: Request): Promise<Response> {
             phone: insertedS.phone,
           };
         }
-      } catch (sErr) {
-        console.warn("⚠️ Supabase insert user warning:", sErr);
-      }
+      } catch (sErr) {}
 
-      // 2. Save to Drizzle DB
-      try {
-        await db.insert(users).values({
-          id,
-          name: body.name || "Untitled",
-          email: emailLower,
-          passwordHash,
-          role,
-          group: body.group || null,
-          status: body.status || "active",
-          joinedAt: body.joinedAt ? new Date(body.joinedAt) : now,
-          lastActive: null,
-          isEmailVerified: true,
-          emailVerificationCode: null,
-          phone: body.phone || null,
-        }).onConflictDoNothing();
-      } catch (dbErr) {
-        console.warn("⚠️ Database insert user timed out locally");
-      }
-
-      // 3. Save to serverStore
+      // 2. Save to serverStore
       const storeUser = serverStore.saveUser({
         id,
         name: body.name || "Untitled",
@@ -410,18 +388,9 @@ export async function contentRoute(request: Request): Promise<Response> {
             };
           }
         }
-      } catch (sErr) {
-        console.warn("⚠️ Supabase update user warning:", sErr);
-      }
+      } catch (sErr) {}
 
-      // 2. Update in Drizzle DB
-      try {
-        await db.update(users).set(updateData).where(eq(users.id, id));
-      } catch (dbErr) {
-        console.warn("⚠️ Database update timed out in PUT /api/users/:id");
-      }
-
-      // 3. Update serverStore
+      // 2. Update serverStore
       const storeUpdate = {
         ...updateData,
         role: updateData.role as any,
@@ -453,7 +422,7 @@ export async function contentRoute(request: Request): Promise<Response> {
         }
       } catch (sErr) {}
 
-      // 1. Delete from Supabase REST API
+      // 1. Delete from Supabase REST API (Port 443)
       try {
         await supabase.from("progress").delete().eq("student_id", id);
         await supabase.from("certificates").delete().eq("student_id", id);
@@ -469,31 +438,9 @@ export async function contentRoute(request: Request): Promise<Response> {
           await supabase.from("submissions").delete().eq("student_id", id);
         }
         await supabase.from("users").delete().eq("id", id);
-      } catch (sErr) {
-        console.warn("⚠️ Supabase delete user warning:", sErr);
-      }
+      } catch (sErr) {}
 
-      // 2. Delete from Drizzle DB
-      try {
-        await db.delete(progress).where(eq(progress.studentId, id));
-        await db.delete(certificates).where(eq(certificates.studentId, id));
-        await db.delete(enrollments).where(eq(enrollments.studentId, id));
-        await db.delete(notifications).where(eq(notifications.userId, id));
-        await db.delete(messages).where(or(eq(messages.fromId, id), eq(messages.toId, id)));
-        const studentSubmissions = await db.select({ id: submissions.id }).from(submissions).where(eq(submissions.studentId, id));
-        const subIds = studentSubmissions.map((s) => s.id);
-        if (subIds.length > 0) {
-          for (const subId of subIds) {
-            await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, subId));
-          }
-          await db.delete(submissions).where(eq(submissions.studentId, id));
-        }
-        await db.delete(users).where(eq(users.id, id));
-      } catch (dbErr) {
-        console.warn("⚠️ Database delete timed out in DELETE /api/users/:id");
-      }
-
-      // 3. Delete from serverStore
+      // 2. Delete from serverStore
       serverStore.deleteUser(id);
 
       return new Response(JSON.stringify({ ok: true }), {
