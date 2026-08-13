@@ -1,9 +1,27 @@
 {
-  "outputDirectory": "dist/client",
-  "rewrites": [
+  "version": 2,
+  "builds": [
     {
-      "source": "/(.*)",
-      "destination": "/index.html"
+      "src": "api/index.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/assets/(.*)",
+      "dest": "/dist/client/assets/$1"
+    },
+    {
+      "src": "/logo.png",
+      "dest": "/dist/client/logo.png"
+    },
+    {
+      "src": "/2.png",
+      "dest": "/dist/client/2.png"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
     }
   ]
 }
