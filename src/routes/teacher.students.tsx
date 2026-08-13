@@ -21,7 +21,7 @@ const ITEMS_PER_PAGE = 20;
 
 export const Route = createFileRoute("/teacher/students")({ component: TeacherStudents });
 
-function TeacherStudents() {
+export function TeacherStudents() {
   const { user } = useAuth();
   const { courses, users, progress, submissions, assessments, sendMessage, grantExtraAttempt } = useData();
 
