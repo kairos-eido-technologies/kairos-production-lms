@@ -1,6 +1,14 @@
 import fs from "fs";
 import path from "path";
 
+const logoPath = path.join(process.cwd(), "public", "logo.png");
+let logoSrc = "https://kairos-production-lms.vercel.app/logo.png";
+
+if (fs.existsSync(logoPath)) {
+  const logoBuffer = fs.readFileSync(logoPath);
+  logoSrc = `data:image/png;base64,${logoBuffer.toString("base64")}`;
+}
+
 const commonStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
@@ -29,12 +37,13 @@ const commonStyles = `
     position: relative;
   }
   .logo-img {
-    height: 52px;
-    width: auto;
-    max-width: 200px;
+    height: 64px;
+    width: 64px;
+    border-radius: 50%;
     display: block;
     margin: 0 auto 12px auto;
-    object-fit: contain;
+    object-fit: cover;
+    box-shadow: 0 8px 24px rgba(225, 29, 72, 0.4);
   }
   .logo-text {
     font-size: 24px;
@@ -139,7 +148,7 @@ const commonStyles = `
   }
 `;
 
-const logoHeader = `<div class="header"><img src="https://kairos-production-lms.vercel.app/logo.png" alt="iTech Academy Logo" class="logo-img" /><div class="logo-text">iTech Academy</div></div>`;
+const logoHeader = `<div class="header"><img src="${logoSrc}" alt="iTech Academy Logo" class="logo-img" /><div class="logo-text">iTech Academy</div></div>`;
 
 const templates = [
   {
@@ -217,7 +226,7 @@ if (!fs.existsSync(outDir)) {
 for (const t of templates) {
   const filePath = path.join(outDir, t.filename);
   fs.writeFileSync(filePath, t.html, "utf-8");
-  console.log(`✨ Preview Generated with iTech Logo: ${t.filename}`);
+  console.log(`✨ Preview Generated with user's exact uploaded logo: ${t.filename}`);
 }
 
-console.log(`\n🎉 All 13 Email Previews updated with iTech Logo in: ${outDir}`);
+console.log(`\n🎉 All 13 Email Previews updated with new logo in: ${outDir}`);

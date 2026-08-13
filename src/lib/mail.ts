@@ -51,12 +51,13 @@ const commonStyles = `
     border-bottom: 2px solid rgba(225, 29, 72, 0.4);
   }
   .logo-img {
-    height: 52px;
-    width: auto;
-    max-width: 200px;
+    height: 64px;
+    width: 64px;
+    border-radius: 50%;
     display: block;
     margin: 0 auto 12px auto;
-    object-fit: contain;
+    object-fit: cover;
+    box-shadow: 0 8px 24px rgba(225, 29, 72, 0.4);
   }
   .logo-text {
     font-size: 24px;
