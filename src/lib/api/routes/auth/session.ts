@@ -40,7 +40,7 @@ export async function sessionRoute(request: Request): Promise<Response> {
       where: eq(users.id, payload.userId),
     });
   } catch (err) {
-    console.warn("⚠️ Session DB query warning:", err);
+    console.warn("⚠️ Session DB query timed out (using serverStore fallback)");
   }
 
   // Fallback: try serverStore for ANY user (not just admin) when DB is slow

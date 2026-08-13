@@ -957,16 +957,24 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/certificates
     if (request.method === "GET" && path === "/api/certificates") {
       const status = url.searchParams.get("status");
-      const rows = status
-        ? await db.query.certificates.findMany({ where: eq(certificates.status, status) })
-        : await db.select().from(certificates);
+      let mapped: any[] = [];
+      try {
+        const rows = status
+          ? await db.query.certificates.findMany({ where: eq(certificates.status, status) })
+          : await db.select().from(certificates);
 
-      const mapped = rows.map((c) => ({
-        ...c,
-        requestedAt: c.requestedAt.toISOString().slice(0, 10),
-        issuedAt: c.issuedAt ? c.issuedAt.toISOString().slice(0, 10) : undefined,
-        proctorLog: (c.proctorLog as any[]) ?? undefined,
-      }));
+        mapped = rows.map((c) => ({
+          ...c,
+          requestedAt: c.requestedAt.toISOString().slice(0, 10),
+          issuedAt: c.issuedAt ? c.issuedAt.toISOString().slice(0, 10) : undefined,
+          proctorLog: (c.proctorLog as any[]) ?? undefined,
+        }));
+        serverStore.setCertificates(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/certificates (using serverStore fallback)");
+        mapped = serverStore.getCertificates();
+        if (status) mapped = mapped.filter((c) => c.status === status);
+      }
 
       return new Response(JSON.stringify({ certificates: mapped }), {
         status: 200,
@@ -1809,15 +1817,23 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/events -> list all events
     if (request.method === "GET" && path === "/api/events") {
-      const allEvents = await db.select().from(events);
-      const mapped = allEvents.map((e) => ({
-        id: e.id,
-        courseId: e.courseId || null,
-        title: e.title,
-        description: e.description || null,
-        eventDate: e.eventDate.toISOString(),
-        createdAt: e.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allEvents = await db.select().from(events);
+        mapped = allEvents.map((e) => ({
+          id: e.id,
+          courseId: e.courseId || null,
+          title: e.title,
+          description: e.description || null,
+          eventDate: e.eventDate ? e.eventDate.toISOString() : new Date().toISOString(),
+          createdAt: e.createdAt ? e.createdAt.toISOString() : new Date().toISOString(),
+        }));
+        serverStore.setEvents(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/events (using serverStore fallback)");
+        mapped = serverStore.getEvents();
+      }
+
       return new Response(JSON.stringify({ events: mapped }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1896,15 +1912,23 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/announcements -> list all announcements
     if (request.method === "GET" && path === "/api/announcements") {
-      const allAnnouncements = await db.select().from(announcements);
-      const mapped = allAnnouncements.map((a) => ({
-        id: a.id,
-        courseId: a.courseId,
-        title: a.title,
-        body: a.body,
-        isPinned: a.isPinned,
-        createdAt: a.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allAnnouncements = await db.select().from(announcements);
+        mapped = allAnnouncements.map((a) => ({
+          id: a.id,
+          courseId: a.courseId,
+          title: a.title,
+          body: a.body,
+          isPinned: a.isPinned,
+          createdAt: a.createdAt ? a.createdAt.toISOString() : new Date().toISOString(),
+        }));
+        serverStore.setAnnouncements(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/announcements (using serverStore fallback)");
+        mapped = serverStore.getAnnouncements();
+      }
+
       return new Response(JSON.stringify({ announcements: mapped }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1969,15 +1993,23 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/discussions -> list all discussions
     if (request.method === "GET" && path === "/api/discussions") {
-      const allDiscussions = await db.select().from(discussions);
-      const mapped = allDiscussions.map((d) => ({
-        id: d.id,
-        courseId: d.courseId,
-        userId: d.userId,
-        title: d.title,
-        body: d.body,
-        createdAt: d.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allDiscussions = await db.select().from(discussions);
+        mapped = allDiscussions.map((d) => ({
+          id: d.id,
+          courseId: d.courseId,
+          userId: d.userId,
+          title: d.title,
+          body: d.body,
+          createdAt: d.createdAt ? d.createdAt.toISOString() : new Date().toISOString(),
+        }));
+        serverStore.setDiscussions(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/discussions (using serverStore fallback)");
+        mapped = serverStore.getDiscussions();
+      }
+
       return new Response(JSON.stringify({ discussions: mapped }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2021,14 +2053,22 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/discussion-replies -> list all replies
     if (request.method === "GET" && path === "/api/discussion-replies") {
-      const allReplies = await db.select().from(discussionReplies);
-      const mapped = allReplies.map((r) => ({
-        id: r.id,
-        discussionId: r.discussionId,
-        userId: r.userId,
-        body: r.body,
-        createdAt: r.createdAt.toISOString(),
-      }));
+      let mapped: any[] = [];
+      try {
+        const allReplies = await db.select().from(discussionReplies);
+        mapped = allReplies.map((r) => ({
+          id: r.id,
+          discussionId: r.discussionId,
+          userId: r.userId,
+          body: r.body,
+          createdAt: r.createdAt ? r.createdAt.toISOString() : new Date().toISOString(),
+        }));
+        serverStore.setDiscussionReplies(mapped);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/discussion-replies (using serverStore fallback)");
+        mapped = serverStore.getDiscussionReplies();
+      }
+
       return new Response(JSON.stringify({ discussionReplies: mapped }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2087,12 +2127,20 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/video-checkpoints -> list checkpoints
     if (request.method === "GET" && path === "/api/video-checkpoints") {
       const contentItemId = url.searchParams.get("contentItemId");
-      let rows;
-      if (contentItemId) {
-        rows = await db.select().from(videoCheckpoints).where(eq(videoCheckpoints.contentItemId, contentItemId));
-      } else {
-        rows = await db.select().from(videoCheckpoints);
+      let rows: any[] = [];
+      try {
+        if (contentItemId) {
+          rows = await db.select().from(videoCheckpoints).where(eq(videoCheckpoints.contentItemId, contentItemId));
+        } else {
+          rows = await db.select().from(videoCheckpoints);
+        }
+        serverStore.setVideoCheckpoints(rows);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/video-checkpoints (using serverStore fallback)");
+        rows = serverStore.getVideoCheckpoints();
+        if (contentItemId) rows = rows.filter((v) => v.contentItemId === contentItemId);
       }
+
       return new Response(JSON.stringify({ videoCheckpoints: rows }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2153,12 +2201,20 @@ export async function contentRoute(request: Request): Promise<Response> {
     // GET /api/checkpoint-progress -> list progress
     if (request.method === "GET" && path === "/api/checkpoint-progress") {
       const studentId = url.searchParams.get("studentId");
-      let rows;
-      if (studentId) {
-        rows = await db.select().from(checkpointProgress).where(eq(checkpointProgress.studentId, studentId));
-      } else {
-        rows = await db.select().from(checkpointProgress);
+      let rows: any[] = [];
+      try {
+        if (studentId) {
+          rows = await db.select().from(checkpointProgress).where(eq(checkpointProgress.studentId, studentId));
+        } else {
+          rows = await db.select().from(checkpointProgress);
+        }
+        serverStore.setCheckpointProgress(rows);
+      } catch (dbErr) {
+        console.warn("⚠️ Database query timed out in GET /api/checkpoint-progress (using serverStore fallback)");
+        rows = serverStore.getCheckpointProgress();
+        if (studentId) rows = rows.filter((c) => c.studentId === studentId);
       }
+
       return new Response(JSON.stringify({ checkpointProgress: rows }), {
         status: 200,
         headers: { "content-type": "application/json" },
