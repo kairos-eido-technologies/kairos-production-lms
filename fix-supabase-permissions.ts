@@ -29,6 +29,14 @@ async function syncFullSchema() {
         "reset_password_code" varchar(6)
       );
 
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "email_verification_code" varchar(6);
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "is_email_verified" boolean NOT NULL DEFAULT false;
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "phone" varchar(20);
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "reset_password_code" varchar(6);
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "group_name" varchar(100);
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "avatar" text;
+      ALTER TABLE public."users" ADD COLUMN IF NOT EXISTS "last_active" timestamp;
+
       CREATE TABLE IF NOT EXISTS public."courses" (
         "id" text PRIMARY KEY,
         "name" text NOT NULL,

@@ -36,3 +36,7 @@ dist-ssr
 
 # Lovable build artifacts (not used)
 .lovable/
+
+# Uploads directory
+uploads/*
+!uploads/.gitkeep

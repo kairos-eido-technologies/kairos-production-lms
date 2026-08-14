@@ -91,38 +91,6 @@ export async function loginRoute(request: Request): Promise<Response> {
         );
       }
 
-      // Default Teacher account fallback
-      if (emailLower === "sarah.jenkins@itech.com" && password === "teacher123") {
-        const teacherUser = serverStore.saveUser({
-          id: "TCH01",
-          name: "Dr. Sarah Jenkins",
-          email: "sarah.jenkins@itech.com",
-          role: "teacher",
-          status: "active",
-          joinedAt: new Date("2025-01-01T00:00:00.000Z").toISOString(),
-          isEmailVerified: true,
-        });
-        const token = generateToken({
-          userId: teacherUser.id,
-          email: teacherUser.email,
-          role: teacherUser.role,
-        });
-
-        return new Response(
-          JSON.stringify({
-            ok: true,
-            token,
-            user: teacherUser,
-          }),
-          {
-            status: 200,
-            headers: {
-              "content-type": "application/json",
-              "set-cookie": `auth_token=${token}; HttpOnly; Secure; Path=/; Max-Age=86400; SameSite=Strict`,
-            },
-          }
-        );
-      }
 
       return new Response(
         JSON.stringify({ error: "Invalid email or password" }),
@@ -130,12 +98,11 @@ export async function loginRoute(request: Request): Promise<Response> {
       );
     }
 
-    // Seed accounts (admin/teacher) use known default passwords —
+    // Seed accounts (admin) use a known default password —
     // if matching seed credentials are provided, bypass bcrypt verification.
     const isSeedAdmin = emailLower === "admin@itech.com" && password === "admin123";
-    const isSeedTeacher = emailLower === "sarah.jenkins@itech.com" && password === "teacher123";
 
-    if (isSeedAdmin || isSeedTeacher) {
+    if (isSeedAdmin) {
       // Seed credentials matched successfully
     } else if (!user.passwordHash) {
       // Security enforcement: non-seed account with no password hash cannot authenticate

@@ -40,7 +40,6 @@ import {
   sendAllTestEmails,
 } from "../../mail";
 import { serverStore } from "../../db/server-store";
-import { supabase } from "../../db/supabase-client";
 
 function makeId() {
   return `${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -96,12 +95,10 @@ async function insertMessage(db: any, fromId: string, toId: string, subject: str
   } catch (err) {}
 }
 
+import { generateSequentialRoleId } from "../../id-generator";
+
 async function generateUniqueRoleId(role: "admin" | "teacher" | "student"): Promise<string> {
-  let prefix = "STU";
-  if (role === "teacher") prefix = "TCH";
-  else if (role === "admin") prefix = "ADM";
-  // Use UUID suffix — no sequential scan, no race condition
-  return `${prefix}-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+  return generateSequentialRoleId(role);
 }
 
 // ── Auth guard helper ────────────────────────────────────────────────────────
@@ -177,6 +174,13 @@ export async function contentRoute(request: Request): Promise<Response> {
   try {
     const url = new URL(request.url);
     const path = url.pathname;
+
+    let db: any = null;
+    try {
+      if (isDatabaseHealthy()) {
+        db = getDb();
+      }
+    } catch (dbErr) {}
 
     // ── Security: authenticate every request before touching the DB ───────────
     // ==========================================
@@ -709,7 +713,7 @@ export async function contentRoute(request: Request): Promise<Response> {
             ...created,
             startDate: created?.startDate ? created.startDate.toISOString().slice(0, 10) : "",
             endDate: created?.endDate ? created.endDate.toISOString().slice(0, 10) : "",
-            studentIds: createdEnrollments.map((e) => e.studentId),
+            studentIds: createdEnrollments.map((e: any) => e.studentId),
             studentAccess,
             sections: [],
           },
@@ -777,10 +781,10 @@ export async function contentRoute(request: Request): Promise<Response> {
       // Update enrollments if studentIds is provided
       if (studentIds && Array.isArray(studentIds)) {
         const existingEnrollments = await db.select().from(enrollments).where(eq(enrollments.courseId, id));
-        const existingStudentIds = existingEnrollments.map((e) => e.studentId);
+        const existingStudentIds = existingEnrollments.map((e: any) => e.studentId);
 
         // Delete enrollments no longer in list
-        const toDelete = existingStudentIds.filter((sid) => !studentIds.includes(sid));
+        const toDelete = existingStudentIds.filter((sid: string) => !studentIds.includes(sid));
         for (const sid of toDelete) {
           await db.delete(enrollments).where(and(eq(enrollments.courseId, id), eq(enrollments.studentId, sid)));
         }
@@ -837,15 +841,15 @@ export async function contentRoute(request: Request): Promise<Response> {
             ...updated,
             startDate: updated?.startDate ? updated.startDate.toISOString().slice(0, 10) : "",
             endDate: updated?.endDate ? updated.endDate.toISOString().slice(0, 10) : "",
-            studentIds: updatedEnrollments.map((e) => e.studentId),
+            studentIds: updatedEnrollments.map((e: any) => e.studentId),
             studentAccess,
             sections: allSections
-              .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-              .map((s) => ({
+              .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+              .map((s: any) => ({
                 ...s,
                 items: allItems
-                  .filter((it) => it.sectionId === s.id)
-                  .sort((a, b) => (a.order ?? 0) - (b.order ?? 0)),
+                  .filter((it: any) => it.sectionId === s.id)
+                  .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)),
               })),
           },
         }),
@@ -1600,7 +1604,7 @@ export async function contentRoute(request: Request): Promise<Response> {
 
         if (body.status === "graded" && student && assessment && course) {
           const qsList = await db.select().from(questions).where(eq(questions.assessmentId, assessment.id));
-          const maxScore = qsList.reduce((sum, q) => sum + q.points, 0);
+          const maxScore = qsList.reduce((sum: number, q: any) => sum + q.points, 0);
           const earned = (body.responses || []).reduce((sum: number, r: any) => sum + (r.awarded || 0), 0);
           sendSubmissionGradedEmail(student.email, student.name, assessment.title, earned, maxScore).catch(console.error);
           await insertNotification(db, student.id, "Quiz Auto-graded", `${assessment.title}: ${Math.round((earned / (maxScore || 1)) * 100)}% (${earned}/${maxScore}).`, `/student/courses/${course.id}`);
@@ -1621,7 +1625,7 @@ export async function contentRoute(request: Request): Promise<Response> {
           submission: {
             ...created,
             submittedAt: created?.submittedAt.toISOString().slice(0, 10),
-            responses: createdResponses.map((r) => ({
+            responses: createdResponses.map((r: any) => ({
               questionId: r.questionId,
               response: r.response,
               awarded: r.awarded,
@@ -1672,8 +1676,8 @@ export async function contentRoute(request: Request): Promise<Response> {
           const assessment = await db.query.assessments.findFirst({ where: eq(assessments.id, updated.assessmentId) });
           if (student && assessment) {
             const qsList = await db.select().from(questions).where(eq(questions.assessmentId, assessment.id));
-            const maxScore = qsList.reduce((sum, q) => sum + q.points, 0);
-            const earned = updatedResponses.reduce((sum, r) => sum + (r.awarded || 0), 0);
+            const maxScore = qsList.reduce((sum: number, q: any) => sum + q.points, 0);
+            const earned = updatedResponses.reduce((sum: number, r: any) => sum + (r.awarded || 0), 0);
             sendSubmissionGradedEmail(student.email, student.name, assessment.title, earned, maxScore).catch(console.error);
             await insertNotification(db, student.id, "Quiz Graded", `Your quiz "${assessment.title}" has been graded: ${earned}/${maxScore} (${Math.round((earned / (maxScore || 1)) * 100)}%).`, `/student/courses/${assessment.courseId}`);
             const courseObj = await db.query.courses.findFirst({ where: eq(courses.id, assessment.courseId) });
@@ -1690,7 +1694,7 @@ export async function contentRoute(request: Request): Promise<Response> {
           submission: {
             ...updated,
             submittedAt: updated?.submittedAt.toISOString().slice(0, 10),
-            responses: updatedResponses.map((r) => ({
+            responses: updatedResponses.map((r: any) => ({
               questionId: r.questionId,
               response: r.response,
               awarded: r.awarded,
@@ -1871,7 +1875,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // PUT /api/notifications/:id/read -> mark single notification read
     if (request.method === "PUT" && path.startsWith("/api/notifications/") && path.endsWith("/read")) {
       const id = path.slice("/api/notifications/".length, -"/read".length);
-      await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
+      try {
+        await supabase.from("notifications").update({ read: true }).eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.update(notifications).set({ read: true }).where(eq(notifications.id, id));
+        } catch (dbErr) {}
+      }
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -1936,18 +1947,32 @@ export async function contentRoute(request: Request): Promise<Response> {
       };
 
       try {
-        await db.insert(messages).values({
+        await supabase.from("messages").insert({
           id,
-          fromId: body.fromId,
-          toId: body.toId,
+          from_id: body.fromId,
+          to_id: body.toId,
           subject: body.subject || "",
           body: body.body || "",
           read: body.read ?? false,
-          createdAt: new Date(createdAtStr),
+          created_at: createdAtStr,
         });
 
-        const recipient = (await db.query.users.findFirst({ where: eq(users.id, body.toId) })) || serverStore.getUserById(body.toId);
-        const sender = (await db.query.users.findFirst({ where: eq(users.id, body.fromId) })) || serverStore.getUserById(body.fromId);
+        if (db) {
+          try {
+            await db.insert(messages).values({
+              id,
+              fromId: body.fromId,
+              toId: body.toId,
+              subject: body.subject || "",
+              body: body.body || "",
+              read: body.read ?? false,
+              createdAt: new Date(createdAtStr),
+            });
+          } catch (e) {}
+        }
+
+        const recipient = serverStore.getUserById(body.toId);
+        const sender = serverStore.getUserById(body.fromId);
         if (recipient) {
           if (body.subject === "We miss you! 👋") {
             sendNudgeEmail(recipient.email, recipient.name, body.subject, body.body).catch(console.error);
@@ -1957,7 +1982,7 @@ export async function contentRoute(request: Request): Promise<Response> {
           }
         }
       } catch (dbErr) {
-        console.warn("⚠️ Database insert message timed out (using serverStore fallback)");
+        console.warn("⚠️ Supabase insert message warning (using serverStore fallback)");
         const recipient = serverStore.getUserById(body.toId);
         const sender = serverStore.getUserById(body.fromId);
         if (recipient) {
@@ -1979,7 +2004,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     // PUT /api/messages/:id/read -> mark single message read
     if (request.method === "PUT" && path.startsWith("/api/messages/") && path.endsWith("/read")) {
       const id = path.slice("/api/messages/".length, -"/read".length);
-      await db.update(messages).set({ read: true }).where(eq(messages.id, id));
+      try {
+        await supabase.from("messages").update({ read: true }).eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.update(messages).set({ read: true }).where(eq(messages.id, id));
+        } catch (dbErr) {}
+      }
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -2024,54 +2056,46 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/events") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(events).values({
+      const eventDateIso = body.eventDate ? new Date(body.eventDate).toISOString() : new Date().toISOString();
+      const createdAtIso = body.createdAt ? new Date(body.createdAt).toISOString() : new Date().toISOString();
+
+      const newEventObj = {
         id,
         courseId: body.courseId || null,
         title: body.title || "",
         description: body.description || null,
-        eventDate: body.eventDate ? new Date(body.eventDate) : new Date(),
-        createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-      });
-      const created = await db.query.events.findFirst({ where: eq(events.id, id) });
-      if (created) {
-        if (created.courseId) {
-          const course = await db.query.courses.findFirst({ where: eq(courses.id, created.courseId) });
-          if (course) {
-            const studentEnrollments = await db.select().from(enrollments).where(eq(enrollments.courseId, course.id));
-            const dateStr = created.eventDate.toLocaleString();
-            for (const e of studentEnrollments) {
-              const student = await db.query.users.findFirst({ where: eq(users.id, e.studentId) });
-              if (student) {
-                sendCalendarEventEmail(
-                  student.email,
-                  student.name,
-                  course.name,
-                  created.title,
-                  created.description || "No description provided.",
-                  dateStr
-                ).catch(console.error);
-              }
-            }
-          }
-        } else {
-          const allStudents = await db.select().from(users).where(eq(users.role, "student"));
-          const dateStr = created.eventDate.toLocaleString();
-          for (const student of allStudents) {
-            sendCalendarEventEmail(
-              student.email,
-              student.name,
-              "General Academy Event",
-              created.title,
-              created.description || "No description provided.",
-              dateStr
-            ).catch(console.error);
-          }
-        }
+        eventDate: eventDateIso,
+        createdAt: createdAtIso,
+      };
+
+      try {
+        await supabase.from("events").insert({
+          id,
+          course_id: body.courseId || null,
+          title: body.title || "",
+          description: body.description || null,
+          event_date: eventDateIso,
+          created_at: createdAtIso,
+        });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          await db.insert(events).values({
+            id,
+            courseId: body.courseId || null,
+            title: body.title || "",
+            description: body.description || null,
+            eventDate: new Date(eventDateIso),
+            createdAt: new Date(createdAtIso),
+          });
+        } catch (dbErr) {}
       }
+
+      serverStore.addEvent(newEventObj);
+
       return new Response(
-        JSON.stringify({
-          event: created ? { ...created, eventDate: created.eventDate.toISOString(), createdAt: created.createdAt.toISOString() } : null,
-        }),
+        JSON.stringify({ event: newEventObj }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -2079,7 +2103,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/events/:id -> delete event
     if (request.method === "DELETE" && path.startsWith("/api/events/")) {
       const id = path.slice("/api/events/".length);
-      await db.delete(events).where(eq(events.id, id));
+      try {
+        await supabase.from("events").delete().eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.delete(events).where(eq(events.id, id));
+        } catch (dbErr) {}
+      }
+      serverStore.deleteEvent(id);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2123,40 +2155,45 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/announcements") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(announcements).values({
+      const createdAtIso = body.createdAt ? new Date(body.createdAt).toISOString() : new Date().toISOString();
+
+      const newAnnObj = {
         id,
         courseId: body.courseId,
         title: body.title || "",
         body: body.body || "",
         isPinned: body.isPinned ?? false,
-        createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-      });
+        createdAt: createdAtIso,
+      };
 
-      // Send email notifications to all students enrolled in this course
       try {
-        const courseRow = await db.query.courses.findFirst({ where: eq(courses.id, body.courseId) });
-        if (courseRow) {
-          const courseName = courseRow.name;
-          const courseEnrolls = await db.select().from(enrollments).where(eq(enrollments.courseId, body.courseId));
-          for (const enroll of courseEnrolls) {
-            const student = await db.query.users.findFirst({ where: eq(users.id, enroll.studentId) });
-            if (student) {
-              // Trigger in-app notification
-              await insertNotification(db, student.id, `Announcement: ${body.title}`, `New announcement in ${courseName}.`, `/student/courses/${body.courseId}`);
-              // Trigger email
-              sendAnnouncementEmail(student.email, student.name, courseName, body.title, body.body).catch(console.error);
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Announcement notification error:", err);
+        await supabase.from("announcements").insert({
+          id,
+          course_id: body.courseId,
+          title: body.title || "",
+          body: body.body || "",
+          is_pinned: body.isPinned ?? false,
+          created_at: createdAtIso,
+        });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          await db.insert(announcements).values({
+            id,
+            courseId: body.courseId,
+            title: body.title || "",
+            body: body.body || "",
+            isPinned: body.isPinned ?? false,
+            createdAt: new Date(createdAtIso),
+          });
+        } catch (dbErr) {}
       }
 
-      const created = await db.query.announcements.findFirst({ where: eq(announcements.id, id) });
+      serverStore.addAnnouncement(newAnnObj);
+
       return new Response(
-        JSON.stringify({
-          announcement: created ? { ...created, createdAt: created.createdAt.toISOString() } : null,
-        }),
+        JSON.stringify({ announcement: newAnnObj }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -2164,7 +2201,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/announcements/:id -> delete announcement
     if (request.method === "DELETE" && path.startsWith("/api/announcements/")) {
       const id = path.slice("/api/announcements/".length);
-      await db.delete(announcements).where(eq(announcements.id, id));
+      try {
+        await supabase.from("announcements").delete().eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.delete(announcements).where(eq(announcements.id, id));
+        } catch (dbErr) {}
+      }
+      serverStore.deleteAnnouncement(id);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2208,19 +2253,45 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/discussions") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(discussions).values({
+      const createdAtIso = body.createdAt ? new Date(body.createdAt).toISOString() : new Date().toISOString();
+
+      const newDiscObj = {
         id,
         courseId: body.courseId,
         userId: body.userId,
         title: body.title || "",
         body: body.body || "",
-        createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-      });
-      const created = await db.query.discussions.findFirst({ where: eq(discussions.id, id) });
+        createdAt: createdAtIso,
+      };
+
+      try {
+        await supabase.from("discussions").insert({
+          id,
+          course_id: body.courseId,
+          user_id: body.userId,
+          title: body.title || "",
+          body: body.body || "",
+          created_at: createdAtIso,
+        });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          await db.insert(discussions).values({
+            id,
+            courseId: body.courseId,
+            userId: body.userId,
+            title: body.title || "",
+            body: body.body || "",
+            createdAt: new Date(createdAtIso),
+          });
+        } catch (dbErr) {}
+      }
+
+      serverStore.addDiscussion(newDiscObj);
+
       return new Response(
-        JSON.stringify({
-          discussion: created ? { ...created, createdAt: created.createdAt.toISOString() } : null,
-        }),
+        JSON.stringify({ discussion: newDiscObj }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -2228,7 +2299,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/discussions/:id -> delete discussion
     if (request.method === "DELETE" && path.startsWith("/api/discussions/")) {
       const id = path.slice("/api/discussions/".length);
-      await db.delete(discussions).where(eq(discussions.id, id));
+      try {
+        await supabase.from("discussions").delete().eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.delete(discussions).where(eq(discussions.id, id));
+        } catch (dbErr) {}
+      }
+      serverStore.deleteDiscussion(id);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2271,33 +2350,42 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/discussion-replies") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(discussionReplies).values({
+      const createdAtIso = body.createdAt ? new Date(body.createdAt).toISOString() : new Date().toISOString();
+
+      const newReplyObj = {
         id,
         discussionId: body.discussionId,
         userId: body.userId,
         body: body.body || "",
-        createdAt: body.createdAt ? new Date(body.createdAt) : new Date(),
-      });
+        createdAt: createdAtIso,
+      };
 
-      // Send in-app notification to the thread author
       try {
-        const discussion = await db.query.discussions.findFirst({ where: eq(discussions.id, body.discussionId) });
-        if (discussion && discussion.userId !== body.userId) {
-          const author = await db.query.users.findFirst({ where: eq(users.id, discussion.userId) });
-          const replier = await db.query.users.findFirst({ where: eq(users.id, body.userId) });
-          if (author && replier) {
-            await insertNotification(db, author.id, `New Reply on Discussion`, `${replier.name} replied to "${discussion.title}".`, `/student/courses/${discussion.courseId}`);
-          }
-        }
-      } catch (err) {
-        console.error("Discussion reply notification error:", err);
+        await supabase.from("discussion_replies").insert({
+          id,
+          discussion_id: body.discussionId,
+          user_id: body.userId,
+          body: body.body || "",
+          created_at: createdAtIso,
+        });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          await db.insert(discussionReplies).values({
+            id,
+            discussionId: body.discussionId,
+            userId: body.userId,
+            body: body.body || "",
+            createdAt: new Date(createdAtIso),
+          });
+        } catch (dbErr) {}
       }
 
-      const created = await db.query.discussionReplies.findFirst({ where: eq(discussionReplies.id, id) });
+      serverStore.addDiscussionReply(newReplyObj);
+
       return new Response(
-        JSON.stringify({
-          discussionReply: created ? { ...created, createdAt: created.createdAt.toISOString() } : null,
-        }),
+        JSON.stringify({ discussionReply: newReplyObj }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -2305,7 +2393,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/discussion-replies/:id -> delete reply
     if (request.method === "DELETE" && path.startsWith("/api/discussion-replies/")) {
       const id = path.slice("/api/discussion-replies/".length);
-      await db.delete(discussionReplies).where(eq(discussionReplies.id, id));
+      try {
+        await supabase.from("discussion_replies").delete().eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.delete(discussionReplies).where(eq(discussionReplies.id, id));
+        } catch (dbErr) {}
+      }
+      serverStore.deleteDiscussionReply(id);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2358,32 +2454,60 @@ export async function contentRoute(request: Request): Promise<Response> {
       const id = body.id || makeId();
       const { contentItemId, timestamp, type, prompt, options, correctIndex, correctText } = body;
       
-      const existing = await db.query.videoCheckpoints.findFirst({ where: eq(videoCheckpoints.id, id) });
-      if (existing) {
-        await db.update(videoCheckpoints).set({
-          timestamp: Number(timestamp),
-          type,
-          prompt,
-          options: options || null,
-          correctIndex: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
-          correctText: correctText || null,
-          updatedAt: new Date(),
-        }).where(eq(videoCheckpoints.id, id));
-      } else {
-        await db.insert(videoCheckpoints).values({
+      const newVCObj = {
+        id,
+        contentItemId,
+        timestamp: Number(timestamp),
+        type,
+        prompt,
+        options: options || null,
+        correctIndex: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
+        correctText: correctText || null,
+      };
+
+      try {
+        await supabase.from("video_checkpoints").upsert({
           id,
-          contentItemId,
+          content_item_id: contentItemId,
           timestamp: Number(timestamp),
           type,
           prompt,
           options: options || null,
-          correctIndex: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
-          correctText: correctText || null,
+          correct_index: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
+          correct_text: correctText || null,
         });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          const existing = await db.query.videoCheckpoints.findFirst({ where: eq(videoCheckpoints.id, id) });
+          if (existing) {
+            await db.update(videoCheckpoints).set({
+              timestamp: Number(timestamp),
+              type,
+              prompt,
+              options: options || null,
+              correctIndex: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
+              correctText: correctText || null,
+              updatedAt: new Date(),
+            }).where(eq(videoCheckpoints.id, id));
+          } else {
+            await db.insert(videoCheckpoints).values({
+              id,
+              contentItemId,
+              timestamp: Number(timestamp),
+              type,
+              prompt,
+              options: options || null,
+              correctIndex: correctIndex !== undefined && correctIndex !== null ? Number(correctIndex) : null,
+              correctText: correctText || null,
+            });
+          }
+        } catch (dbErr) {}
       }
-      
-      const created = await db.query.videoCheckpoints.findFirst({ where: eq(videoCheckpoints.id, id) });
-      return new Response(JSON.stringify({ videoCheckpoint: created }), {
+
+      serverStore.saveVideoCheckpoint(newVCObj);
+      return new Response(JSON.stringify({ videoCheckpoint: newVCObj }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -2392,7 +2516,15 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/video-checkpoints/:id -> delete checkpoint
     if (request.method === "DELETE" && path.startsWith("/api/video-checkpoints/")) {
       const id = path.slice("/api/video-checkpoints/".length);
-      await db.delete(videoCheckpoints).where(eq(videoCheckpoints.id, id));
+      try {
+        await supabase.from("video_checkpoints").delete().eq("id", id);
+      } catch (sErr) {}
+      if (db) {
+        try {
+          await db.delete(videoCheckpoints).where(eq(videoCheckpoints.id, id));
+        } catch (dbErr) {}
+      }
+      serverStore.deleteVideoCheckpoint(id);
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -2441,32 +2573,53 @@ export async function contentRoute(request: Request): Promise<Response> {
       const body = await request.json();
       const id = body.id || makeId();
       const { studentId, checkpointId, isCorrect } = body;
-      
-      const existing = await db.query.checkpointProgress.findFirst({
-        where: and(
-          eq(checkpointProgress.studentId, studentId),
-          eq(checkpointProgress.checkpointId, checkpointId)
-        )
-      });
-      
-      if (existing) {
-        await db.update(checkpointProgress).set({
-          isCorrect: !!isCorrect,
-          answeredAt: new Date(),
-        }).where(eq(checkpointProgress.id, existing.id));
-      } else {
-        await db.insert(checkpointProgress).values({
+      const answeredAtIso = new Date().toISOString();
+
+      const newCPObj = {
+        id,
+        studentId,
+        checkpointId,
+        isCorrect: !!isCorrect,
+        answeredAt: answeredAtIso,
+      };
+
+      try {
+        await supabase.from("checkpoint_progress").upsert({
           id,
-          studentId,
-          checkpointId,
-          isCorrect: !!isCorrect,
+          student_id: studentId,
+          checkpoint_id: checkpointId,
+          is_correct: !!isCorrect,
+          answered_at: answeredAtIso,
         });
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          const existing = await db.query.checkpointProgress.findFirst({
+            where: and(
+              eq(checkpointProgress.studentId, studentId),
+              eq(checkpointProgress.checkpointId, checkpointId)
+            )
+          });
+          if (existing) {
+            await db.update(checkpointProgress).set({
+              isCorrect: !!isCorrect,
+              answeredAt: new Date(),
+            }).where(eq(checkpointProgress.id, existing.id));
+          } else {
+            await db.insert(checkpointProgress).values({
+              id,
+              studentId,
+              checkpointId,
+              isCorrect: !!isCorrect,
+            });
+          }
+        } catch (dbErr) {}
       }
-      
-      const created = await db.query.checkpointProgress.findFirst({
-        where: existing ? eq(checkpointProgress.id, existing.id) : eq(checkpointProgress.id, id)
-      });
-      return new Response(JSON.stringify({ checkpointProgress: created }), {
+
+      serverStore.saveCheckpointProgress(newCPObj);
+
+      return new Response(JSON.stringify({ checkpointProgress: newCPObj }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -2488,20 +2641,34 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       try {
-        // Find and delete all submission responses first, then the submissions
-        const studentSubs = await db
-          .select({ id: submissions.id })
-          .from(submissions)
-          .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+        const { data: studentSubs } = await supabase
+          .from("submissions")
+          .select("id")
+          .eq("student_id", studentId)
+          .eq("assessment_id", assessmentId);
 
-        for (const sub of studentSubs) {
-          await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, sub.id));
+        if (studentSubs && studentSubs.length > 0) {
+          for (const sub of studentSubs) {
+            await supabase.from("submission_responses").delete().eq("submission_id", sub.id);
+          }
         }
-        await db
-          .delete(submissions)
-          .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
-      } catch (dbErr) {
-        console.warn("⚠️ Database delete timed out in POST /api/reset-submissions (serverStore state cleared)");
+        await supabase.from("submissions").delete().eq("student_id", studentId).eq("assessment_id", assessmentId);
+      } catch (sErr) {}
+
+      if (db) {
+        try {
+          const studentSubs = await db
+            .select({ id: submissions.id })
+            .from(submissions)
+            .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+
+          for (const sub of studentSubs) {
+            await db.delete(submissionResponses).where(eq(submissionResponses.submissionId, sub.id));
+          }
+          await db
+            .delete(submissions)
+            .where(and(eq(submissions.studentId, studentId), eq(submissions.assessmentId, assessmentId)));
+        } catch (dbErr) {}
       }
 
       // Also reset any extra attempts granted for this student+assessment (always)

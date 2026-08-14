@@ -1,8 +1,8 @@
 import { hashPassword, generateToken } from "../../../auth";
 import { sendVerificationEmail } from "../../../mail";
-import { randomUUID } from "crypto";
 import { serverStore } from "../../../db/server-store";
 import { supabase } from "../../../db/supabase-client";
+import { generateSequentialRoleId } from "../../../id-generator";
 
 export async function registerRoute(request: Request): Promise<Response> {
   try {
@@ -59,8 +59,8 @@ export async function registerRoute(request: Request): Promise<Response> {
     // Create new user with verification details
     const passwordHash = await hashPassword(password);
     
-    // Generate unique student ID (STU-<uuid short>)
-    const newUserId = `STU-${randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase()}`;
+    // Generate sequential student ID (STU-1, STU-2, etc.)
+    const newUserId = await generateSequentialRoleId("student");
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
     let createdUserRecord: any = {

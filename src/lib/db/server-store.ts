@@ -50,15 +50,7 @@ const defaultAdmin: ServerUser = {
   isEmailVerified: true,
 };
 
-const defaultTeacher: ServerUser = {
-  id: "TCH01",
-  name: "Dr. Sarah Jenkins",
-  email: "sarah.jenkins@itech.com",
-  role: "teacher",
-  status: "active",
-  joinedAt: "2025-01-01T00:00:00.000Z",
-  isEmailVerified: true,
-};
+
 
 class ServerStore {
   private usersMap = new Map<string, ServerUser>();
@@ -80,13 +72,27 @@ class ServerStore {
 
   constructor() {
     this.saveUser(defaultAdmin);
-    this.saveUser(defaultTeacher);
   }
 
   // User management
   saveUser(user: ServerUser) {
     const existing = this.usersMap.get(user.id) || Array.from(this.usersMap.values()).find(u => u.email.toLowerCase() === user.email.toLowerCase());
-    const finalId = user.id || existing?.id || `STU-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+    let finalId = user.id || existing?.id;
+    if (!finalId) {
+      const prefix = user.role === "teacher" ? "TCH" : user.role === "admin" ? "ADM" : "STU";
+      const regex = new RegExp(`^${prefix}-?(\\d+)$`, "i");
+      let maxNum = 0;
+      for (const u of this.usersMap.values()) {
+        if (u.role === user.role && u.id) {
+          const m = u.id.match(regex);
+          if (m) {
+            const n = parseInt(m[1], 10);
+            if (!isNaN(n) && n > maxNum) maxNum = n;
+          }
+        }
+      }
+      finalId = `${prefix}-${maxNum + 1}`;
+    }
     const merged: ServerUser = {
       ...(existing || {}),
       ...user,
@@ -208,21 +214,60 @@ class ServerStore {
 
   setEvents(list: any[]) { this.eventsList = list; }
   getEvents() { return this.eventsList; }
+  addEvent(event: any) {
+    this.eventsList = this.eventsList.filter(e => e.id !== event.id);
+    this.eventsList.unshift(event);
+  }
+  deleteEvent(id: string) {
+    this.eventsList = this.eventsList.filter(e => e.id !== id);
+  }
 
   setAnnouncements(list: any[]) { this.announcementsList = list; }
   getAnnouncements() { return this.announcementsList; }
+  addAnnouncement(ann: any) {
+    this.announcementsList = this.announcementsList.filter(a => a.id !== ann.id);
+    this.announcementsList.unshift(ann);
+  }
+  deleteAnnouncement(id: string) {
+    this.announcementsList = this.announcementsList.filter(a => a.id !== id);
+  }
 
   setDiscussions(list: any[]) { this.discussionsList = list; }
   getDiscussions() { return this.discussionsList; }
+  addDiscussion(disc: any) {
+    this.discussionsList = this.discussionsList.filter(d => d.id !== disc.id);
+    this.discussionsList.unshift(disc);
+  }
+  deleteDiscussion(id: string) {
+    this.discussionsList = this.discussionsList.filter(d => d.id !== id);
+  }
 
   setDiscussionReplies(list: any[]) { this.discussionRepliesList = list; }
   getDiscussionReplies() { return this.discussionRepliesList; }
+  addDiscussionReply(reply: any) {
+    this.discussionRepliesList = this.discussionRepliesList.filter(r => r.id !== reply.id);
+    this.discussionRepliesList.push(reply);
+  }
+  deleteDiscussionReply(id: string) {
+    this.discussionRepliesList = this.discussionRepliesList.filter(r => r.id !== id);
+  }
 
   setVideoCheckpoints(list: any[]) { this.videoCheckpointsList = list; }
   getVideoCheckpoints() { return this.videoCheckpointsList; }
+  saveVideoCheckpoint(vc: any) {
+    this.videoCheckpointsList = this.videoCheckpointsList.filter(v => v.id !== vc.id);
+    this.videoCheckpointsList.push(vc);
+  }
+  deleteVideoCheckpoint(id: string) {
+    this.videoCheckpointsList = this.videoCheckpointsList.filter(v => v.id !== id);
+  }
 
   setCheckpointProgress(list: any[]) { this.checkpointProgressList = list; }
   getCheckpointProgress() { return this.checkpointProgressList; }
+  saveCheckpointProgress(cp: any) {
+    this.checkpointProgressList = this.checkpointProgressList.filter(c => !(c.studentId === cp.studentId && c.checkpointId === cp.checkpointId));
+    this.checkpointProgressList.push(cp);
+  }
 
   // Extra Attempts
   getExtraAttempts(): Record<string, number> {

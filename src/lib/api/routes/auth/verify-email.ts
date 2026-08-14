@@ -135,7 +135,7 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       });
     }
 
-    const finalUser = serverStore.getUserById(targetUserId) || serverStore.getUserByEmail(targetEmail) || {
+    const finalUser: any = serverStore.getUserById(targetUserId) || serverStore.getUserByEmail(targetEmail) || {
       id: targetUserId,
       name: targetName,
       email: targetEmail,

@@ -1,4 +1,5 @@
 import bcrypt from "bcryptjs";
+// @ts-ignore
 import jwt from "jsonwebtoken";
 import "dotenv/config";
 

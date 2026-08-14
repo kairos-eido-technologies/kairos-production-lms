@@ -30,7 +30,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
       if (response.ok) {
         set({
-          user: response.user as User,
+          user: response.user as unknown as User,
           isLoading: false,
         });
         return { ok: true, role: response.user.role as Role };
@@ -62,7 +62,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
       if (response.ok) {
         set({
-          user: response.user as User,
+          user: response.user as unknown as User,
           isLoading: false,
         });
         return { ok: true };
@@ -92,7 +92,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       set({ isLoading: true, error: null });
       const session = await getSession();
       if (session.ok && session.user) {
-        set({ user: session.user as User, isLoading: false });
+        set({ user: session.user as unknown as User, isLoading: false });
       } else {
         set({ user: null, isLoading: false });
       }

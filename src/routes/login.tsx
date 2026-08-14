@@ -81,7 +81,7 @@ const GlassInput = ({ className = "", ...props }: React.InputHTMLAttributes<HTML
   />
 );
 
-export function LoginPage() {
+function LoginPage() {
   const { user, login, register, verifyEmail, resendCode, initializeSession, forgotPassword, resetPassword, isLoading } = useAuth();
   const nav = useNavigate();
   const [mode, setMode] = useState<"login" | "signup" | "forgot" | "verify">("login");
@@ -426,30 +426,6 @@ export function LoginPage() {
             )}
           </form>
 
-          {/* Seed accounts helper hint */}
-          {mode === "login" && (
-            <div className="mt-6 pt-5 border-t border-white/10 text-xs text-muted-foreground space-y-1 text-center">
-              <p className="font-semibold text-foreground/80 mb-1.5">Demo Seed Accounts</p>
-              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
-                <button
-                  type="button"
-                  onClick={() => { setEmail("admin@itech.com"); setPwd("admin123"); }}
-                  className="rounded-lg border border-white/10 bg-white/5 p-2 text-left hover:border-primary/40 hover:bg-primary/5 transition-all text-xs"
-                >
-                  <div className="font-bold text-foreground">Admin</div>
-                  <div className="text-muted-foreground truncate">admin@itech.com</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setEmail("sarah.jenkins@itech.com"); setPwd("teacher123"); }}
-                  className="rounded-lg border border-white/10 bg-white/5 p-2 text-left hover:border-primary/40 hover:bg-primary/5 transition-all text-xs"
-                >
-                  <div className="font-bold text-foreground">Teacher</div>
-                  <div className="text-muted-foreground truncate">sarah.jenkins@...</div>
-                </button>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Benefits list below card */}
