@@ -1,42 +1,36 @@
+import { useState, useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+
+export const Route = createFileRoute("/login")({
+  component: LoginPage,
+});
+import { Logo } from "@/components/Logo";
 import { useAuth } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Logo } from "@/components/Logo";
 import { ParticleLayer } from "@/components/effects/ParticleLayer";
-import { useReducedMotion } from "@/hooks/use-reduced-motion";
 import {
-  ArrowRight,
-  Lock,
-  Mail,
-  AlertCircle,
-  Phone,
-  Loader2,
   Zap,
   Shield,
   Trophy,
   Users,
   BookOpen,
   Star,
+  Mail,
+  Lock,
+  Phone,
+  ArrowRight,
+  AlertCircle,
+  Loader2,
+  CheckCircle2,
+  ShieldCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 
-export const Route = createFileRoute("/login")({
-  head: () => ({
-    meta: [
-      { title: "Sign in — iTech Academy" },
-      { name: "description", content: "Access your iTech Academy learning portal." },
-    ],
-  }),
-  component: LoginPage,
-});
-
-/** Same circuit traces as the preview hero */
+/** Animated SVG circuit background */
 function CircuitTraces() {
-  const reduced = useReducedMotion();
+  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const paths = [
     "M0 120 H180 L230 70 H460 L520 130 H820",
     "M0 300 H120 L190 230 H520 L580 300 H1000",
@@ -87,10 +81,10 @@ const GlassInput = ({ className = "", ...props }: React.InputHTMLAttributes<HTML
   />
 );
 
-function LoginPage() {
-  const { user, login, register, initializeSession, forgotPassword, resetPassword, isLoading } = useAuth();
+export function LoginPage() {
+  const { user, login, register, verifyEmail, resendCode, initializeSession, forgotPassword, resetPassword, isLoading } = useAuth();
   const nav = useNavigate();
-  const [mode, setMode] = useState<"login" | "signup" | "forgot">("login");
+  const [mode, setMode] = useState<"login" | "signup" | "forgot" | "verify">("login");
   const [forgotStep, setForgotStep] = useState<"send-code" | "reset-pwd">("send-code");
   const [name, setName] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -98,16 +92,33 @@ function LoginPage() {
   const [pwd, setPwd] = useState("");
   const [phone, setPhone] = useState("");
   const [resetCode, setResetCode] = useState("");
+  const [verifyCode, setVerifyCode] = useState("");
   const [newPwd, setNewPwd] = useState("");
   const [newConfirm, setNewConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => { initializeSession(); }, [initializeSession]);
-  useEffect(() => { if (user) nav({ to: `/${user.role}` as any }); }, [user, nav]);
+  useEffect(() => { if (user && mode !== "verify") nav({ to: `/${user.role}` as any }); }, [user, nav, mode]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (mode === "verify") {
+      if (!verifyCode.trim() || verifyCode.trim().length !== 6) {
+        setError("Please enter a valid 6-digit verification code.");
+        return;
+      }
+      const res = await verifyEmail(verifyCode.trim());
+      if (!res.ok) {
+        setError(res.error);
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Email verified successfully! Welcome to iTech Academy 🎉");
+      nav({ to: "/student" });
+      return;
+    }
 
     if (mode === "forgot") {
       if (forgotStep === "send-code") {
@@ -133,8 +144,8 @@ function LoginPage() {
       if (pwd !== confirm) { setError("Passwords do not match."); return; }
       const res = await register({ name, email, password: pwd, phone });
       if (!res.ok) { setError(res.error); toast.error(res.error); return; }
-      toast.success("Account created — welcome!");
-      nav({ to: "/student" });
+      toast.success("Account created — activation code sent to your email!");
+      setMode("verify");
       return;
     }
 
@@ -175,7 +186,7 @@ function LoginPage() {
           <Logo />
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.18em] text-primary backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            {mode === "forgot" ? "Password Recovery" : mode === "signup" ? "Join the Academy" : "Secure Portal"}
+            {mode === "verify" ? "Account Activation" : mode === "forgot" ? "Password Recovery" : mode === "signup" ? "Join the Academy" : "Secure Portal"}
           </div>
         </div>
 
@@ -192,12 +203,16 @@ function LoginPage() {
           {/* Heading */}
           <div className="mb-6">
             <h1 className="text-2xl font-bold tracking-tight text-foreground">
-              {mode === "forgot"
+              {mode === "verify"
+                ? "Verify your email"
+                : mode === "forgot"
                 ? forgotStep === "send-code" ? "Forgot password" : "Reset password"
                 : mode === "login" ? "Welcome back" : "Create your account"}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {mode === "forgot"
+              {mode === "verify"
+                ? `Enter the 6-digit activation code sent to ${email || "your email"}.`
+                : mode === "forgot"
                 ? forgotStep === "send-code"
                   ? "Enter your email to receive a reset code."
                   : "Enter the code we sent and set a new password."
@@ -208,7 +223,7 @@ function LoginPage() {
           </div>
 
           {/* Tab switcher — transparent glass pill */}
-          {mode !== "forgot" && (
+          {mode !== "forgot" && mode !== "verify" && (
             <div className="relative flex rounded-xl border border-white/10 bg-white/5 p-1 backdrop-blur-md mb-6">
               {/* Sliding gradient indicator */}
               <div
@@ -242,7 +257,45 @@ function LoginPage() {
 
           {/* Form */}
           <form onSubmit={submit} className="space-y-4">
-            {mode === "forgot" ? (
+            {mode === "verify" ? (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="verify-code" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">6-Digit Verification Code</Label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-primary pointer-events-none" />
+                    <GlassInput
+                      id="verify-code"
+                      type="text"
+                      maxLength={6}
+                      value={verifyCode}
+                      onChange={(e) => setVerifyCode(e.target.value)}
+                      placeholder="e.g. 849201"
+                      className="pl-10 font-mono tracking-widest text-center text-lg font-bold text-foreground"
+                    />
+                  </div>
+                </div>
+                <div className="flex justify-between items-center text-xs pt-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await resendCode();
+                      if (res.ok) toast.success("Verification code resent to your email!");
+                      else toast.error(res.error || "Failed to resend code");
+                    }}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Resend code
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { nav({ to: "/student" }); }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    Skip for now
+                  </button>
+                </div>
+              </div>
+            ) : mode === "forgot" ? (
               forgotStep === "send-code" ? (
                 <div className="space-y-1.5">
                   <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email address</Label>
@@ -351,63 +404,68 @@ function LoginPage() {
                   Processing...
                 </span>
               ) : (
-                <>
-                  {mode === "forgot"
-                    ? forgotStep === "send-code" ? "Send verification code" : "Reset password"
-                    : mode === "login" ? "Sign in to dashboard" : "Create my account"}
-                  <ArrowRight className="ml-2 h-4 w-4 transition group-hover:translate-x-0.5" />
-                </>
+                <span className="flex items-center justify-center gap-2">
+                  {mode === "verify"
+                    ? "Activate Account"
+                    : mode === "forgot"
+                    ? forgotStep === "send-code" ? "Send Reset Code" : "Reset Password"
+                    : mode === "login" ? "Sign in to Dashboard" : "Create Account"}
+                  <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+                </span>
               )}
             </Button>
+
+            {mode === "forgot" && (
+              <button
+                type="button"
+                onClick={() => { setMode("login"); setError(null); setForgotStep("send-code"); }}
+                className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors pt-2 block"
+              >
+                Back to sign in
+              </button>
+            )}
           </form>
 
+          {/* Seed accounts helper hint */}
           {mode === "login" && (
-            <p className="mt-4 text-sm text-muted-foreground text-center">
-              Don't have an account?{" "}
-              <button type="button" onClick={() => { setMode("signup"); setError(null); }} className="text-primary hover:underline font-medium transition-colors">
-                Create one free
-              </button>
-            </p>
-          )}
-
-          {mode === "forgot" && (
-            <div className="flex justify-between items-center text-sm mt-4 pt-4 border-t border-white/10">
-              {forgotStep === "reset-pwd" ? (
-                <button type="button" onClick={async () => {
-                  setError(null);
-                  const res = await forgotPassword(email);
-                  if (!res.ok) { setError(res.error); toast.error(res.error); }
-                  else toast.success("A new code has been sent!");
-                }} className="text-primary hover:underline transition-colors font-medium">
-                  Resend Code
+            <div className="mt-6 pt-5 border-t border-white/10 text-xs text-muted-foreground space-y-1 text-center">
+              <p className="font-semibold text-foreground/80 mb-1.5">Demo Seed Accounts</p>
+              <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                <button
+                  type="button"
+                  onClick={() => { setEmail("admin@itech.com"); setPwd("admin123"); }}
+                  className="rounded-lg border border-white/10 bg-white/5 p-2 text-left hover:border-primary/40 hover:bg-primary/5 transition-all text-xs"
+                >
+                  <div className="font-bold text-foreground">Admin</div>
+                  <div className="text-muted-foreground truncate">admin@itech.com</div>
                 </button>
-              ) : <div />}
-              <button type="button" onClick={() => { setMode("login"); setError(null); setForgotStep("send-code"); }} className="text-muted-foreground hover:text-foreground hover:underline transition-colors">
-                Back to Sign in
-              </button>
+                <button
+                  type="button"
+                  onClick={() => { setEmail("sarah.jenkins@itech.com"); setPwd("teacher123"); }}
+                  className="rounded-lg border border-white/10 bg-white/5 p-2 text-left hover:border-primary/40 hover:bg-primary/5 transition-all text-xs"
+                >
+                  <div className="font-bold text-foreground">Teacher</div>
+                  <div className="text-muted-foreground truncate">sarah.jenkins@...</div>
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Benefits strip below card */}
-        <div className="mt-6 grid grid-cols-3 gap-2">
+        {/* Benefits list below card */}
+        <div className="mt-8 grid grid-cols-2 sm:grid-cols-3 gap-2">
           {BENEFITS.map(({ icon: Icon, text }) => (
             <div
               key={text}
-              className="flex items-center gap-1.5 rounded-lg border border-white/8 px-2.5 py-2 backdrop-blur-sm"
-              style={{ background: "color-mix(in oklab, var(--card) 30%, transparent)" }}
+              className="flex items-center gap-2 rounded-lg border border-white/5 bg-white/[0.02] px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm"
             >
-              <Icon className="h-3 w-3 shrink-0 text-primary" />
-              <span className="text-[10px] text-muted-foreground leading-tight">{text}</span>
+              <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+              <span className="truncate">{text}</span>
             </div>
           ))}
         </div>
-
-        {/* Powered by */}
-        <p className="mt-4 text-center font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">
-          Powered by Kairos Eido Technologies
-        </p>
       </motion.div>
     </div>
   );
 }
+export default LoginPage;

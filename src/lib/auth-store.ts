@@ -105,11 +105,11 @@ export const useAuth = create<AuthState>()((set, get) => ({
 
   verifyEmail: async (code) => {
     try {
-      set({ isLoading: true, error: null });
+      const currentUser = get().user;
       const resp = await fetch("/api/auth/verify-email", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code, email: currentUser?.email }),
       });
       const data = await resp.json();
       if (resp.ok && data.ok) {
