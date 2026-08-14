@@ -79,7 +79,7 @@ export async function registerRoute(request: Request): Promise<Response> {
 
     // 1. Sync to Supabase REST API (Primary persistent store over Port 443)
     try {
-      const { data: insertedSupabase } = await supabase.from("users").upsert({
+      const { data: insertedSupabase, error: sErr } = await supabase.from("users").upsert({
         id: newUserId,
         name: name.trim(),
         email: emailLower,
@@ -92,7 +92,10 @@ export async function registerRoute(request: Request): Promise<Response> {
         phone: phone || null,
       }, { onConflict: "id" }).select().single();
 
-      if (insertedSupabase) {
+      if (sErr) {
+        console.error("❌ Supabase user registration error:", sErr);
+      } else if (insertedSupabase) {
+        console.log("✅ User created & persisted in Supabase REST database:", insertedSupabase.email);
         createdUserRecord = {
           ...insertedSupabase,
           passwordHash: insertedSupabase.password_hash || passwordHash,
@@ -101,7 +104,9 @@ export async function registerRoute(request: Request): Promise<Response> {
           emailVerificationCode: insertedSupabase.email_verification_code || verificationCode,
         };
       }
-    } catch (sErr) {}
+    } catch (sErr) {
+      console.error("❌ Exception during Supabase user registration:", sErr);
+    }
 
     // 2. Sync to serverStore memory cache
     serverStore.saveUser({

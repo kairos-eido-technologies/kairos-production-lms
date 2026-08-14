@@ -1,26 +1,19 @@
-import nodemailer from "nodemailer";
-import "dotenv/config";
+function getMailTransporter() {
+  const host = process.env.SMTP_HOST || "smtp.gmail.com";
+  const port = parseInt(process.env.SMTP_PORT || "465", 10);
+  const user = process.env.SMTP_USER || "kairoseidotechnologies@gmail.com";
+  const pass = process.env.SMTP_PASS || "jnixkajeegoqzkuc";
+  const from = process.env.SMTP_FROM || '"iTech Academy" <kairoseidotechnologies@gmail.com>';
 
-const smtpHost = process.env.SMTP_HOST || "";
-const smtpPort = parseInt(process.env.SMTP_PORT || "587", 10);
-const smtpUser = process.env.SMTP_USER || "";
-const smtpPass = process.env.SMTP_PASS || "";
-const smtpFrom = process.env.SMTP_FROM || '"iTech Academy" <kairoseidotechnologies@gmail.com>';
-
-const isConfigured = !!(smtpHost && smtpUser && smtpPass);
-
-let transporter: any = null;
-
-if (isConfigured) {
-  transporter = nodemailer.createTransport({
-    host: smtpHost,
-    port: smtpPort,
-    secure: smtpPort === 465, // true for 465, false for other ports
-    auth: {
-      user: smtpUser,
-      pass: smtpPass,
-    },
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure: port === 465,
+    auth: { user, pass },
+    tls: { rejectUnauthorized: false },
   });
+
+  return { transporter, from };
 }
 
 // Custom CSS styles for clean red/black/dark theme
@@ -173,22 +166,19 @@ export async function sendVerificationEmail(
     <!DOCTYPE html><html><head><meta charset="utf-8"><title>Verify Your Email — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Security Verification</span><h1>Verify Your Email Address</h1><p>Hello ${name},</p><p>Thank you for creating an account on iTech Academy. Please enter the 6-digit activation code below to verify your email and unlock your learning portal:</p><div class="code-box">${code}</div><p style="font-size: 13px; color: #71717a;">This verification code will expire in 24 hours. If you did not sign up for an iTech Academy account, please ignore this email.</p></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
   `;
 
-  if (!isConfigured || !transporter) {
-    logConsoleFallback("SMTP Verification Email", toEmail, name, `Verification Code: ${code}`);
-    return { success: true, mode: "console" };
-  }
-
   try {
+    const { transporter, from } = getMailTransporter();
     await transporter.sendMail({
-      from: smtpFrom,
+      from,
       to: toEmail,
       subject: "Verify your email — iTech Academy",
       text: `Hello ${name},\n\nYour iTech Academy email verification code is: ${code}\n\nUse this code to activate your account.`,
       html: htmlContent,
     });
+    console.log(`✅ Verification email successfully sent to ${toEmail} (Code: ${code})`);
     return { success: true, mode: "smtp" };
   } catch (error) {
-    console.error("Error sending verification email via SMTP:", error);
+    console.error("❌ Error sending verification email via SMTP:", error);
     logConsoleFallback("SMTP Verification Email [RUNTIME ERROR - FALLBACK]", toEmail, name, `Verification Code: ${code}`);
     return { success: false, mode: "console" };
   }
