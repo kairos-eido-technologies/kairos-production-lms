@@ -1062,6 +1062,11 @@ export function ContentBuilder() {
                       label={`Upload ${typeMeta[itemDraft.type].label}`}
                       onUpload={(dataUrl, file) => setItemDraft((d) => ({ ...d, url: dataUrl, fileSize: fileSizeLabel(file.size), title: d.title || file.name }))}
                     />
+                    {itemDraft.type === "ppt" && (
+                      <p className="text-[11px] text-amber-300/90 bg-amber-500/10 border border-amber-500/20 rounded-md p-2 flex items-center gap-1.5 mt-1.5">
+                        <span>💡</span> <span><strong>Recommendation:</strong> Convert your presentation to <strong>PDF format</strong> before uploading for best slide viewing performance across all devices.</span>
+                      </p>
+                    )}
                   </>
                 )}
               </div>

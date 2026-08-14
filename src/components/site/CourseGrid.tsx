@@ -112,17 +112,30 @@ function CourseCard({ course, index }: { course: any; index: number }) {
   const [showSyllabus, setShowSyllabus] = useState(false);
   const accent = ACCENTS[index % ACCENTS.length]!;
 
-  const badgeTag = course.badgeTag || course.badge_tag || "COURSE";
-  const featuredBadgeText = course.featuredBadgeText || course.featured_badge_text;
-  const durationText = course.durationText || course.duration_text || "Self-paced & Live";
-  const projectsText = course.projectsText || course.projects_text || "Real-time projects";
+  const isAws = course.code === "AWS-CP-101" || course.name?.toLowerCase().includes("aws");
+  const isC = course.code === "C-1" || course.name?.toLowerCase().includes("c programming");
+  const isJava = course.code === "JPC" || course.name?.toLowerCase().includes("java");
+
+  const description = course.description || (
+    isAws ? "Master Cloud Computing essentials, AWS VPC, EC2, IAM, S3, Lambda, CloudWatch & CloudTrail with hands-on architecture labs." :
+    isC ? "Foundational programming concepts covering C syntax, control structures, functions, pointers, arrays & file handling." :
+    isJava ? "Object-Oriented Programming (OOP) principles, Java syntax, error handling, arrays & real-world file manipulation." :
+    "Comprehensive hands-on curriculum with practical projects and expert mentorship."
+  );
+
+  const badgeTag = course.badgeTag || course.badge_tag || (
+    isAws ? "AWS CERTIFIED" : isC ? "CORE C" : isJava ? "JAVA OOP" : "COURSE"
+  );
+  const featuredBadgeText = course.featuredBadgeText || course.featured_badge_text || (isAws ? "🔥 POPULAR" : undefined);
+  const durationText = course.durationText || course.duration_text || "8 Weeks · Hands-on";
+  const projectsText = course.projectsText || course.projects_text || (isAws ? "Cloud Labs & Demos" : "Practical Code Labs");
   const videoUrl = course.previewVideoUrl || course.preview_video_url;
   const embedUrl = videoUrl ? getEmbedUrl(videoUrl) : null;
-  const techStack = Array.isArray(course.techStack)
+  const techStack = Array.isArray(course.techStack) && course.techStack.length > 0
     ? course.techStack.map((t: any) => (typeof t === "string" ? t : t?.name || ""))
-    : Array.isArray(course.tech_stack)
+    : Array.isArray(course.tech_stack) && course.tech_stack.length > 0
     ? course.tech_stack
-    : [];
+    : (isAws ? ["AWS", "VPC", "EC2", "IAM", "S3", "Lambda"] : isC ? ["C Syntax", "Pointers", "Arrays", "File I/O"] : isJava ? ["Java", "OOP", "Classes", "Exceptions"] : ["Interactive", "Certified"]);
 
   const sections = Array.isArray(course.sections) ? course.sections : [];
 
@@ -182,8 +195,8 @@ function CourseCard({ course, index }: { course: any; index: number }) {
           </div>
 
           <h3 className="relative mt-4 text-lg font-bold tracking-tight text-foreground">{course.name}</h3>
-          {course.description && (
-            <p className="relative mt-2 text-xs leading-relaxed text-muted-foreground">{course.description}</p>
+          {description && (
+            <p className="relative mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
           )}
 
           {videoUrl && (
