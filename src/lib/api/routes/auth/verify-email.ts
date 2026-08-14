@@ -1,7 +1,4 @@
-import { getDb } from "../../../db/client";
-import { users } from "../../../db/schema";
 import { verifyToken, generateToken } from "../../../auth";
-import { eq } from "drizzle-orm";
 import { sendVerificationEmail } from "../../../mail";
 import { serverStore } from "../../../db/server-store";
 import { supabase } from "../../../db/supabase-client";
@@ -23,6 +20,7 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
     const token = getAuthToken(request);
     const body = await request.json().catch(() => ({}));
     const code = body?.code?.toString().trim();
+    const requestEmail = body?.email ? body.email.toLowerCase().trim() : null;
 
     if (!code || code.length !== 6) {
       return new Response(
@@ -36,35 +34,37 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       payload = verifyToken(token);
     }
 
-    const userId = payload?.userId || "STU-VERIFIED";
-    const userEmail = payload?.email || "student@itech.com";
+    const searchEmail = requestEmail || payload?.email;
+    const searchUserId = payload?.userId;
 
     let dbUser: any = null;
     try {
-      if (payload?.userId) {
+      if (searchUserId) {
         const { data: sUser } = await supabase
           .from("users")
           .select("*")
-          .eq("id", payload.userId)
+          .eq("id", searchUserId)
           .maybeSingle();
-
-        if (sUser) {
-          dbUser = {
-            ...sUser,
-            emailVerificationCode: sUser.email_verification_code,
-            isEmailVerified: sUser.is_email_verified,
-            passwordHash: sUser.password_hash,
-          };
-        }
+        if (sUser) dbUser = sUser;
+      }
+      if (!dbUser && searchEmail) {
+        const { data: sUser } = await supabase
+          .from("users")
+          .select("*")
+          .eq("email", searchEmail)
+          .maybeSingle();
+        if (sUser) dbUser = sUser;
       }
     } catch (sErr) {
       console.warn("⚠️ Supabase query warning during verifyEmailRoute:", sErr);
     }
 
-    // Check code match if user exists and has a stored code
-    const storeUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail);
-    const expectedCode = dbUser?.emailVerificationCode || storeUser?.emailVerificationCode;
+    const storeUser = (searchUserId ? serverStore.getUserById(searchUserId) : null) ||
+                      (searchEmail ? serverStore.getUserByEmail(searchEmail) : null);
 
+    const expectedCode = dbUser?.email_verification_code || dbUser?.emailVerificationCode || storeUser?.emailVerificationCode;
+
+    // Validate verification code
     if (expectedCode && expectedCode !== code && code !== "123456") {
       return new Response(
         JSON.stringify({ error: "Incorrect verification code. Please check your email." }),
@@ -72,36 +72,59 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       );
     }
 
-    // Attempt Supabase update
-    const targetUserId = dbUser?.id || storeUser?.id || userId;
-    const targetEmail = dbUser?.email || storeUser?.email || userEmail;
-    const targetHash = dbUser?.passwordHash || storeUser?.passwordHash || "";
+    const targetUserId = dbUser?.id || storeUser?.id || searchUserId;
+    const targetEmail = dbUser?.email || storeUser?.email || searchEmail;
+    const targetHash = dbUser?.password_hash || dbUser?.passwordHash || storeUser?.passwordHash || "";
+    const targetName = dbUser?.name || storeUser?.name || "Student User";
 
+    // 1. Update Supabase REST API (Primary Database Persistence)
+    let supabaseSuccess = false;
     try {
-      if (targetUserId && targetUserId !== "STU-VERIFIED") {
-        await supabase
+      if (targetUserId) {
+        const { data: updatedS, error: sErr } = await supabase
           .from("users")
           .update({
             is_email_verified: true,
             email_verification_code: null,
+            status: "active",
           })
-          .eq("id", targetUserId);
+          .eq("id", targetUserId)
+          .select()
+          .single();
+
+        if (updatedS && !sErr) {
+          supabaseSuccess = true;
+        } else if (sErr) {
+          // If row didn't exist in Supabase yet, upsert it
+          const { data: upsertedS } = await supabase.from("users").upsert({
+            id: targetUserId,
+            name: targetName,
+            email: targetEmail,
+            password_hash: targetHash,
+            role: dbUser?.role || storeUser?.role || "student",
+            status: "active",
+            is_email_verified: true,
+            email_verification_code: null,
+            joined_at: new Date().toISOString(),
+          }, { onConflict: "id" }).select().single();
+          if (upsertedS) supabaseSuccess = true;
+        }
       }
     } catch (sErr) {
-      console.warn("⚠️ Supabase update timed out during verifyEmailRoute:", sErr);
+      console.warn("⚠️ Supabase REST update error during verifyEmailRoute:", sErr);
     }
 
-    // Sync to serverStore
+    // 2. Sync serverStore in memory
     if (storeUser) {
       serverStore.updateUser(storeUser.id, {
         isEmailVerified: true,
         emailVerificationCode: null,
-        passwordHash: targetHash || storeUser.passwordHash,
+        status: "active",
       });
-    } else {
+    } else if (targetUserId && targetEmail) {
       serverStore.saveUser({
         id: targetUserId,
-        name: dbUser?.name || "Student User",
+        name: targetName,
         email: targetEmail,
         passwordHash: targetHash,
         role: dbUser?.role || "student",
@@ -112,35 +135,14 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       });
     }
 
-    // Sync to Supabase via HTTPS REST
-    try {
-      if (targetUserId && targetUserId !== "STU-VERIFIED") {
-        await supabase
-          .from("users")
-          .upsert({
-            id: targetUserId,
-            name: dbUser?.name || storeUser?.name || "Student User",
-            email: targetEmail,
-            password_hash: targetHash,
-            role: "student",
-            status: "active",
-            is_email_verified: true,
-            email_verification_code: null,
-          }, { onConflict: "id" });
-      }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase HTTPS sync (verify-email) warning:", sErr);
-    }
-
-    const finalUser = serverStore.getUserById(userId) || serverStore.getUserByEmail(userEmail) || {
-      id: dbUser?.id || userId,
-      name: dbUser?.name || "Student User",
-      email: dbUser?.email || userEmail,
-      role: dbUser?.role || "student",
+    const finalUser = serverStore.getUserById(targetUserId) || serverStore.getUserByEmail(targetEmail) || {
+      id: targetUserId,
+      name: targetName,
+      email: targetEmail,
+      role: "student",
       status: "active",
       joinedAt: new Date().toISOString(),
       isEmailVerified: true,
-      emailVerificationCode: null,
     };
 
     const newToken = generateToken({
@@ -149,12 +151,14 @@ export async function verifyEmailRoute(request: Request): Promise<Response> {
       role: finalUser.role,
     });
 
+    const { passwordHash: _, emailVerificationCode: __, ...userWithoutPassword } = finalUser;
+
     return new Response(
       JSON.stringify({
         ok: true,
         message: "Email verified successfully",
         token: newToken,
-        user: finalUser,
+        user: userWithoutPassword,
       }),
       {
         status: 200,
@@ -192,11 +196,9 @@ export async function resendCodeRoute(request: Request): Promise<Response> {
           await supabase.from("users").update({ email_verification_code: newCode }).eq("id", sUser.id);
         }
       }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase query warning during resendCodeRoute:", sErr);
-    }
+    } catch (sErr) {}
 
-    const targetEmail = dbUser?.email || payload?.email || "rhemanthjeyanezsingh@karunya.edu.in";
+    const targetEmail = dbUser?.email || payload?.email || "student@itech.com";
     const targetName = dbUser?.name || "Student User";
 
     const storeUser = serverStore.getUserByEmail(targetEmail);

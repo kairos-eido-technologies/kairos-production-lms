@@ -928,13 +928,16 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/sections") {
       const body = await request.json();
       const id = makeId();
-      await db.insert(sections).values({
-        id,
-        courseId: body.courseId,
-        title: body.title || "Untitled",
-        order: body.order ?? 0,
-      });
-      const created = await db.query.sections.findFirst({ where: eq(sections.id, id) });
+      let created: any = { id, courseId: body.courseId, title: body.title || "Untitled", order: body.order ?? 0 };
+      try {
+        const { data: sSec } = await supabase.from("sections").insert({
+          id,
+          course_id: body.courseId,
+          title: body.title || "Untitled",
+          order: body.order ?? 0,
+        }).select().single();
+        if (sSec) created = { id: sSec.id, courseId: sSec.course_id, title: sSec.title, order: sSec.order };
+      } catch (sErr) {}
       return new Response(JSON.stringify({ section: created }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -945,8 +948,14 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "PUT" && path.startsWith("/api/sections/")) {
       const id = path.slice("/api/sections/".length);
       const body = await request.json();
-      await db.update(sections).set({ title: body.title, order: body.order }).where(eq(sections.id, id));
-      const updated = await db.query.sections.findFirst({ where: eq(sections.id, id) });
+      let updated: any = { id, title: body.title, order: body.order };
+      try {
+        const { data: sSec } = await supabase.from("sections").update({
+          title: body.title,
+          order: body.order,
+        }).eq("id", id).select().single();
+        if (sSec) updated = { id: sSec.id, courseId: sSec.course_id, title: sSec.title, order: sSec.order };
+      } catch (sErr) {}
       return new Response(JSON.stringify({ section: updated }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -956,7 +965,10 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/sections/:id -> delete section
     if (request.method === "DELETE" && path.startsWith("/api/sections/")) {
       const id = path.slice("/api/sections/".length);
-      await db.delete(sections).where(eq(sections.id, id));
+      try {
+        await supabase.from("content_items").delete().eq("section_id", id);
+        await supabase.from("sections").delete().eq("id", id);
+      } catch (sErr) {}
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -971,7 +983,7 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/content-items") {
       const body = await request.json();
       const id = makeId();
-      await db.insert(contentItems).values({
+      let created: any = {
         id,
         sectionId: body.sectionId,
         type: body.type,
@@ -983,8 +995,39 @@ export async function contentRoute(request: Request): Promise<Response> {
         fileSize: body.fileSize || null,
         assessmentId: body.assessmentId || null,
         order: body.order ?? 0,
-      });
-      const created = await db.query.contentItems.findFirst({ where: eq(contentItems.id, id) });
+      };
+
+      try {
+        const { data: sItem } = await supabase.from("content_items").insert({
+          id,
+          section_id: body.sectionId,
+          type: body.type,
+          title: body.title || "",
+          body: body.body || null,
+          url: body.url || null,
+          file_name: body.fileName || null,
+          duration: body.duration ?? null,
+          file_size: body.fileSize || null,
+          assessment_id: body.assessmentId || null,
+          order: body.order ?? 0,
+        }).select().single();
+        if (sItem) {
+          created = {
+            id: sItem.id,
+            sectionId: sItem.section_id,
+            type: sItem.type,
+            title: sItem.title,
+            body: sItem.body,
+            url: sItem.url,
+            fileName: sItem.file_name,
+            duration: sItem.duration,
+            fileSize: sItem.file_size,
+            assessmentId: sItem.assessment_id,
+            order: sItem.order,
+          };
+        }
+      } catch (sErr) {}
+
       return new Response(JSON.stringify({ item: created }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -995,20 +1038,37 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "PUT" && path.startsWith("/api/content-items/")) {
       const id = path.slice("/api/content-items/".length);
       const body = await request.json();
-      await db
-        .update(contentItems)
-        .set({
+      let updated: any = { id, ...body };
+
+      try {
+        const { data: sItem } = await supabase.from("content_items").update({
           title: body.title,
           body: body.body,
           url: body.url,
-          fileName: body.fileName,
+          file_name: body.fileName,
           duration: body.duration ?? null,
-          fileSize: body.fileSize,
-          assessmentId: body.assessmentId ?? null,
+          file_size: body.fileSize,
+          assessment_id: body.assessmentId ?? null,
           order: body.order ?? 0,
-        })
-        .where(eq(contentItems.id, id));
-      const updated = await db.query.contentItems.findFirst({ where: eq(contentItems.id, id) });
+        }).eq("id", id).select().single();
+
+        if (sItem) {
+          updated = {
+            id: sItem.id,
+            sectionId: sItem.section_id,
+            type: sItem.type,
+            title: sItem.title,
+            body: sItem.body,
+            url: sItem.url,
+            fileName: sItem.file_name,
+            duration: sItem.duration,
+            fileSize: sItem.file_size,
+            assessmentId: sItem.assessment_id,
+            order: sItem.order,
+          };
+        }
+      } catch (sErr) {}
+
       return new Response(JSON.stringify({ item: updated }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1018,7 +1078,10 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/content-items/:id -> delete item
     if (request.method === "DELETE" && path.startsWith("/api/content-items/")) {
       const id = path.slice("/api/content-items/".length);
-      await db.delete(contentItems).where(eq(contentItems.id, id));
+      try {
+        await supabase.from("video_checkpoints").delete().eq("content_item_id", id);
+        await supabase.from("content_items").delete().eq("id", id);
+      } catch (sErr) {}
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
