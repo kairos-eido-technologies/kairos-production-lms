@@ -17,15 +17,30 @@ import { PptxSlideRenderer } from "@/components/PptxSlideRenderer";
 interface PptxFullViewerProps {
   url: string;
   title: string;
+  onComplete?: () => void;
 }
 
-export function PptxFullViewer({ url, title }: PptxFullViewerProps) {
+export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) {
   const [slideImages, setSlideImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentSlide, setCurrentSlide] = useState(1);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [useFallback, setUseFallback] = useState(false);
+
+  // Auto-trigger completion when student reaches the last slide or dwells on a 1-slide presentation
+  useEffect(() => {
+    if (!loading && slideImages.length > 0) {
+      if (currentSlide >= slideImages.length) {
+        onComplete?.();
+      } else if (slideImages.length === 1) {
+        const timer = setTimeout(() => {
+          onComplete?.();
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [currentSlide, slideImages.length, loading, onComplete]);
 
   // Extract file ID if URL is /api/files?id=...
   let fileId: string | null = null;
@@ -40,6 +55,7 @@ export function PptxFullViewer({ url, title }: PptxFullViewerProps) {
 
   useEffect(() => {
     let active = true;
+    setCurrentSlide(1);
 
     if (!fileId) {
       // Not a server file ID (e.g. data URL or external URL) -> fallback directly
@@ -85,7 +101,7 @@ export function PptxFullViewer({ url, title }: PptxFullViewerProps) {
 
   // If server slide conversion failed or not applicable, use XML-based client renderer
   if (useFallback) {
-    return <PptxSlideRenderer src={url} title={title} />;
+    return <PptxSlideRenderer src={url} title={title} onComplete={onComplete} />;
   }
 
   const totalSlides = slideImages.length;

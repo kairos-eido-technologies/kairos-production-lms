@@ -21,15 +21,15 @@ export async function uploadToSupabaseStorage(
   if (!supabase) return null;
 
   try {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-    const filePath = `uploads/${fileName}`;
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileId = `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 8)}`;
+    const filePath = `${fileId}-${safeName}`;
 
     const { data, error } = await supabase.storage
       .from(bucketName)
       .upload(filePath, file, {
         cacheControl: "3600",
-        upsert: false,
+        upsert: true,
       });
 
     if (error) {
@@ -41,7 +41,7 @@ export async function uploadToSupabaseStorage(
       .from(bucketName)
       .getPublicUrl(data.path);
 
-    return publicUrlData.publicUrl;
+    return publicUrlData?.publicUrl || `/api/files?id=${encodeURIComponent(fileId)}`;
   } catch (err) {
     console.error("uploadToSupabaseStorage exception:", err);
     return null;

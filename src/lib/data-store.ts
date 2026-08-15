@@ -1337,4 +1337,4 @@ export function isCourseExpired(course: Course, studentId?: string): boolean {
   return today > end;
 }
 
-export type { User, Role, Course, Section, ContentItem, ContentType, Certificate, NotificationItem, Message, CalendarEvent, Announcement, Discussion, DiscussionReply, TechBadge };
+export type { User, Role, Course, Section, ContentItem, ContentType, Certificate, NotificationItem, Message, TechBadge };

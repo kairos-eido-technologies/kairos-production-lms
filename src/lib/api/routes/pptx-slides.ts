@@ -65,6 +65,8 @@ async function convertPptxToImages(
   return pngFiles.map((f) => path.join(outDir, f));
 }
 
+import os from "os";
+
 export async function pptxSlidesRoute(request: Request): Promise<Response> {
   if (request.method !== "GET") {
     return new Response(null, { status: 405, headers: { Allow: "GET" } });
@@ -77,13 +79,70 @@ export async function pptxSlidesRoute(request: Request): Promise<Response> {
   }
 
   try {
-    // Look up file record
-    const { supabase } = await import("../../db/supabase-client");
-    const { data: row } = await supabase.from("files").select("*").eq("id", fileId).maybeSingle();
-    if (!row) return json({ error: "File not found" }, 404);
+    let pptxPath: string | null = null;
 
-    const storageKey = row.storage_key || row.storageKey;
-    const pptxPath = path.join(process.cwd(), "uploads", storageKey);
+    // 1. Check local disk uploads folders for file matching fileId
+    const diskPaths = [
+      path.join(process.cwd(), "uploads"),
+      path.join(os.tmpdir(), "uploads"),
+    ];
+
+    for (const dir of diskPaths) {
+      try {
+        const filesInDir = await fs.readdir(dir);
+        const match = filesInDir.find((f) => f === fileId || f.startsWith(`${fileId}-`) || f.startsWith(fileId));
+        if (match) {
+          pptxPath = path.join(dir, match);
+          break;
+        }
+      } catch (_) {}
+    }
+
+    // 2. Fall back to Supabase Storage and metadata lookup if not found directly on disk
+    if (!pptxPath) {
+      try {
+        const { supabase } = await import("../../db/supabase-client");
+
+        // 2a. Search objects in course-materials bucket
+        const { data: storageList } = await supabase.storage
+          .from("course-materials")
+          .list("", { search: fileId });
+
+        let matchName = storageList && storageList.length > 0 ? storageList[0].name : null;
+
+        if (!matchName) {
+          const { data: row } = await supabase.from("files").select("*").eq("id", fileId).maybeSingle();
+          if (row) {
+            matchName = row.storage_key || row.storageKey || `${fileId}-${row.filename || "file.pptx"}`;
+          }
+        }
+
+        const candidateNames = matchName
+          ? [matchName]
+          : [fileId, `${fileId}.pptx`, `${fileId}.ppt`];
+
+        for (const nameToTry of candidateNames) {
+          const { data: blob, error: dlErr } = await supabase.storage
+            .from("course-materials")
+            .download(nameToTry);
+
+          if (!dlErr && blob) {
+            const arrayBuf = await blob.arrayBuffer();
+            const buffer = Buffer.from(arrayBuf);
+            const targetDir = path.join(os.tmpdir(), "uploads");
+            await fs.mkdir(targetDir, { recursive: true });
+            const savedPath = path.join(targetDir, nameToTry);
+            await fs.writeFile(savedPath, buffer);
+            pptxPath = savedPath;
+            break;
+          }
+        }
+      } catch (sErr) {
+        console.warn("⚠️ Supabase file lookup warning in pptx-slides:", sErr);
+      }
+    }
+
+    if (!pptxPath) return json({ error: "File not found" }, 404);
 
     // Check cache: if PNG files already exist for this fileId, return them
     const cacheDir = path.join(process.cwd(), "uploads", "pptx-cache", fileId);

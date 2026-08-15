@@ -20,7 +20,7 @@ function QuizPage() {
   const { assessmentId } = useParams({ from: "/student/assessments/$assessmentId" });
   const { user } = useAuth();
   const nav = useNavigate();
-  const { assessments, courses, submissions, submitQuiz, progress, extraAttempts } = useData();
+  const { assessments, courses, submissions, submitQuiz, progress, extraAttempts, markItemComplete } = useData();
 
   const a = assessments.find((x) => x.id === assessmentId);
   const course = a ? courses.find((c) => c.id === a.courseId) : null;
@@ -130,6 +130,15 @@ function QuizPage() {
     const finalEvent = { at: new Date().toISOString(), type: "submitted" as const, detail: auto ? "timeout" : "manual" };
     const finalEventsList = [...proctor.events, finalEvent];
     const id = submitQuiz(a.id, user.id, answers, finalEventsList);
+
+    // Auto-mark any matching content item as completed
+    if (course) {
+      const matchingItem = course.sections.flatMap((s) => s.items).find((item) => item.assessmentId === a.id);
+      if (matchingItem) {
+        markItemComplete(user.id, course.id, matchingItem.id);
+      }
+    }
+
     if (auto) toast.warning("Time's up — auto-submitted");
     else toast.success("Submitted!");
     setDone(id);

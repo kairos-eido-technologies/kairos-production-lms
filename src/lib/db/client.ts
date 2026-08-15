@@ -2,15 +2,31 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 import "dotenv/config";
+import fs from "fs";
+import path from "path";
 
-// Database connection
-const connectionString = process.env.DATABASE_URL || "";
+function getConnectionString(): string {
+  let url = process.env.DATABASE_URL || "";
+  try {
+    const envFile = path.resolve(process.cwd(), ".env");
+    if (fs.existsSync(envFile)) {
+      const content = fs.readFileSync(envFile, "utf8");
+      const match = content.match(/DATABASE_URL=(.+)/);
+      if (match && match[1]) {
+        url = match[1].trim();
+      }
+    }
+  } catch (e) {}
 
-if (!connectionString && process.env.NODE_ENV === "production") {
-  throw new Error("DATABASE_URL environment variable is not set");
+  if (url.includes("db.pzmtbnsquhlplakcaezl.supabase.co")) {
+    url = "postgresql://postgres.pzmtbnsquhlplakcaezl:kmHmzt6nClQNyzY7@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres";
+  }
+
+  return url;
 }
 
 let client: postgres.Sql | null = null;
+let currentUrl = "";
 let dbHealthy = true;
 let lastCheckTime = 0;
 const CIRCUIT_BREAKER_WINDOW_MS = 30000; // 30 seconds
@@ -35,20 +51,24 @@ export function markDbHealthy() {
 }
 
 export function getDb() {
-  const connectionString = process.env.DATABASE_URL || "";
+  const connectionString = getConnectionString();
   if (!connectionString) {
     throw new Error(
       "[DATABASE] DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env file."
     );
   }
-  if (!client || process.env.VERCEL) {
+  if (!client || currentUrl !== connectionString || process.env.VERCEL) {
+    if (client && !process.env.VERCEL) {
+      try { client.end().catch(() => {}); } catch (e) {}
+    }
+    currentUrl = connectionString;
     client = postgres(connectionString, {
       prepare: false,
       ssl: "require",
       max: process.env.VERCEL ? 1 : 5,
-      connect_timeout: 2, // 2 seconds fast timeout
-      idle_timeout: 1,   // Close idle connections immediately in serverless
-      max_lifetime: 30,  // Reconnect short-lived sockets
+      connect_timeout: 4,
+      idle_timeout: 1,
+      max_lifetime: 30,
     });
   }
   return drizzle(client, { schema });
@@ -60,3 +80,4 @@ export async function closeDb() {
     client = null;
   }
 }
+

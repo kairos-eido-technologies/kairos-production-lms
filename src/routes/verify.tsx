@@ -20,12 +20,68 @@ export const Route = createFileRoute("/verify")({
 function VerifyPage() {
   const { certificates, users, courses } = useData();
   const [id, setId] = useState("");
-  const [result, setResult] = useState<null | { ok: boolean; cert?: typeof certificates[number] }>(null);
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<null | {
+    ok: boolean;
+    studentName?: string;
+    studentEmail?: string;
+    courseName?: string;
+    score?: number;
+    issuedAt?: string;
+    certId?: string;
+  }>(null);
 
-  const verify = (e: React.FormEvent) => {
+  const verify = async (e: React.FormEvent) => {
     e.preventDefault();
-    const cert = certificates.find((c) => c.id.toLowerCase() === id.trim().toLowerCase() && c.status === "approved");
-    setResult({ ok: !!cert, cert });
+    const cleanId = id.trim();
+    if (!cleanId) return;
+
+    setLoading(true);
+
+    // 1. Try public server API first
+    try {
+      const res = await fetch(`/api/certificates/verify?id=${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.certificate) {
+          const c = data.certificate;
+          setResult({
+            ok: true,
+            studentName: c.studentName,
+            studentEmail: c.studentEmail,
+            courseName: c.courseName,
+            score: c.score,
+            issuedAt: c.issuedAt,
+            certId: c.id,
+          });
+          setLoading(false);
+          return;
+        }
+      }
+    } catch (_) {}
+
+    // 2. Fallback to in-memory store
+    const localCert = certificates.find(
+      (c) => c.id.toLowerCase() === cleanId.toLowerCase() && c.status === "approved"
+    );
+
+    if (localCert) {
+      const u = users.find((x) => x.id === localCert.studentId);
+      const crs = courses.find((x) => x.id === localCert.courseId);
+      setResult({
+        ok: true,
+        studentName: u?.name ?? "Student",
+        studentEmail: u?.email ?? "",
+        courseName: crs?.name ?? "Course",
+        score: localCert.score,
+        issuedAt: localCert.issuedAt ?? "—",
+        certId: localCert.id,
+      });
+    } else {
+      setResult({ ok: false });
+    }
+
+    setLoading(false);
   };
 
   return (
@@ -48,15 +104,15 @@ function VerifyPage() {
           <Input value={id} onChange={(e) => setId(e.target.value)}
             placeholder="Enter certificate ID"
             className="h-12 bg-secondary/60 text-center font-mono tracking-wider" />
-          <Button type="submit" className="w-full h-11 gradient-primary text-primary-foreground border-0 glow">
-            <ShieldCheck className="mr-2 h-4 w-4" /> Verify
+          <Button type="submit" disabled={loading} className="w-full h-11 gradient-primary text-primary-foreground border-0 glow">
+            <ShieldCheck className="mr-2 h-4 w-4" /> {loading ? "Verifying..." : "Verify"}
           </Button>
         </form>
 
         {result && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
             className={`mt-6 rounded-2xl border p-6 ${result.ok ? "border-success/40 bg-success/10" : "border-destructive/40 bg-destructive/10"}`}>
-            {result.ok && result.cert ? (
+            {result.ok ? (
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-success">
                   <CheckCircle2 className="h-6 w-6" />
@@ -65,14 +121,13 @@ function VerifyPage() {
                 <div className="p-4 rounded-xl bg-background/60 border border-success/30 space-y-3">
                   <div>
                     <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold">Student Name</div>
-                    <div className="text-xl font-bold text-foreground">{users.find((u) => u.id === result.cert!.studentId)?.name ?? "—"}</div>
-                    <div className="text-xs text-muted-foreground">{users.find((u) => u.id === result.cert!.studentId)?.email ?? ""}</div>
+                    <div className="text-xl font-bold text-foreground">{result.studentName ?? "—"}</div>
+                    {result.studentEmail && <div className="text-xs text-muted-foreground">{result.studentEmail}</div>}
                   </div>
                   <div className="grid grid-cols-2 gap-3 pt-2 border-t border-border/40">
-                    <Info label="Course" value={courses.find((c) => c.id === result.cert!.courseId)?.name ?? "—"} />
-                    <Info label="Final Score" value={`${result.cert.score}%`} />
-                    <Info label="Issued Date" value={result.cert.issuedAt ?? "—"} />
-                    <Info label="Certificate ID" value={result.cert.id} className="font-mono font-bold text-primary" />
+                    <Info label="Course" value={result.courseName ?? "—"} />
+                    <Info label="Issued Date" value={result.issuedAt ?? "—"} />
+                    <Info label="Certificate ID" value={result.certId ?? id} className="font-mono font-bold text-primary col-span-2" />
                   </div>
                 </div>
               </div>

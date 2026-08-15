@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { ClipboardCheck, ChevronDown, Layers } from "lucide-react";
 import { SecurePdfViewer } from "@/components/SecurePdfViewer";
 import { SecurePptViewer } from "@/components/SecurePptViewer";
+import { sanitizeHtml } from "@/lib/sanitize";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -109,6 +110,13 @@ function CourseLearning() {
   const toggle = (id: string) => {
     if (done.has(id)) { unmarkItemComplete(user.id, course.id, id); }
     else { markItemComplete(user.id, course.id, id); toast.success("Marked complete"); }
+  };
+
+  const autoComplete = (id: string) => {
+    if (!done.has(id)) {
+      markItemComplete(user.id, course.id, id);
+      toast.success("🎉 Lesson completed! Progress updated.", { duration: 3000 });
+    }
   };
 
   const currentIndex = useMemo(() => (active ? allItems.findIndex((i) => i.id === active.id) : -1), [active, allItems]);
@@ -262,6 +270,7 @@ function CourseLearning() {
                   item={active}
                   assessments={assessments.filter((a) => a.courseId === course.id)}
                   onToggleComplete={() => toggle(active.id)}
+                  onAutoComplete={() => autoComplete(active.id)}
                   completed={done.has(active.id)}
                   userId={user.id}
                   prevItem={prevItem}
@@ -393,6 +402,7 @@ function CheckpointVideoPlayer({
   progress,
   userId,
   onSubmitAnswer,
+  onComplete,
 }: {
   url: string;
   title: string;
@@ -400,6 +410,7 @@ function CheckpointVideoPlayer({
   progress: CheckpointProgress[];
   userId: string;
   onSubmitAnswer: (studentId: string, checkpointId: string, isCorrect: boolean) => Promise<void>;
+  onComplete?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [activeCheckpoint, setActiveCheckpoint] = useState<VideoCheckpoint | null>(null);
@@ -550,11 +561,18 @@ function CheckpointVideoPlayer({
         }
       } else {
         lastTimeRef.current = currentTimeVal;
+
+        // Auto-complete check for YouTube: >= 90% watched + all checkpoints answered
+        const totalDur = typeof ytPlayer.getDuration === "function" ? ytPlayer.getDuration() : 0;
+        const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
+        if (totalDur > 0 && currentTimeVal / totalDur >= 0.90 && allCheckpointsSolved) {
+          onComplete?.();
+        }
       }
     }, 250);
 
     return () => clearInterval(interval);
-  }, [embed, ytPlayer]);
+  }, [embed, ytPlayer, onComplete]);
 
   // Native Video Time Update handler
   const handleTimeUpdate = () => {
@@ -584,6 +602,20 @@ function CheckpointVideoPlayer({
       }
     } else {
       lastTimeRef.current = currentTimeVal;
+
+      // Auto-complete check for Native Video: >= 90% watched + all checkpoints answered
+      const totalDur = videoRef.current.duration || 0;
+      const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
+      if (totalDur > 0 && currentTimeVal / totalDur >= 0.90 && allCheckpointsSolved) {
+        onComplete?.();
+      }
+    }
+  };
+
+  const handleVideoEnded = () => {
+    const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
+    if (allCheckpointsSolved) {
+      onComplete?.();
     }
   };
 
@@ -597,22 +629,36 @@ function CheckpointVideoPlayer({
     } else {
       const correctAns = (activeCheckpoint.correctText || "").trim().toLowerCase();
       const studentAns = userAnswer.trim().toLowerCase();
-      isCorrect = correctAns === studentAns;
+      isCorrect = studentAns === correctAns;
     }
 
+    setCorrectFeedback(isCorrect);
+    await onSubmitAnswer(userId, activeCheckpoint.id, isCorrect);
+
     if (isCorrect) {
-      setCorrectFeedback(true);
-      await onSubmitAnswer(userId, activeCheckpoint.id, true);
+      toast.success("Correct answer!");
       setAnsweredCheckpoints((prev) => new Set([...prev, activeCheckpoint.id]));
-      toast.success("Correct answer! You may continue watching.");
+      setTimeout(() => {
+        setActiveCheckpoint(null);
+        setSelectedMCQ(null);
+        setUserAnswer("");
+        setCorrectFeedback(null);
+        if (embed && ytPlayer && typeof ytPlayer.playVideo === "function") {
+          ytPlayer.playVideo();
+        } else if (videoRef.current) {
+          videoRef.current.play().catch(console.error);
+        }
+      }, 1000);
     } else {
-      setCorrectFeedback(false);
-      toast.error("Incorrect answer. Please try again.");
+      toast.error("Incorrect. Review the lesson material and try again.");
     }
   };
 
   const handleContinue = () => {
     setActiveCheckpoint(null);
+    setSelectedMCQ(null);
+    setUserAnswer("");
+    setCorrectFeedback(null);
     if (embed && ytPlayer && typeof ytPlayer.playVideo === "function") {
       ytPlayer.playVideo();
     } else if (videoRef.current) {
@@ -622,6 +668,9 @@ function CheckpointVideoPlayer({
 
   const handleRewind = () => {
     setActiveCheckpoint(null);
+    setSelectedMCQ(null);
+    setUserAnswer("");
+    setCorrectFeedback(null);
     const targetTime = Math.max(0, lastTimeRef.current - 10);
     if (embed && ytPlayer && typeof ytPlayer.seekTo === "function") {
       ytPlayer.seekTo(targetTime, true);
@@ -652,7 +701,11 @@ function CheckpointVideoPlayer({
             ref={videoRef}
             src={url}
             controls
+            controlsList="nodownload noplaybackrate"
+            disablePictureInPicture
+            onContextMenu={(e) => e.preventDefault()}
             onTimeUpdate={handleTimeUpdate}
+            onEnded={handleVideoEnded}
             className="w-full h-full object-contain"
           />
         )}
@@ -774,6 +827,7 @@ function ContentViewer({
   assessments,
   completed,
   onToggleComplete,
+  onAutoComplete,
   userId,
   prevItem,
   nextItem,
@@ -783,6 +837,7 @@ function ContentViewer({
   assessments: StoreAssessment[];
   completed: boolean;
   onToggleComplete: () => void;
+  onAutoComplete: () => void;
   userId: string;
   prevItem: ContentItem | null;
   nextItem: ContentItem | null;
@@ -791,6 +846,85 @@ function ContentViewer({
   const { videoCheckpoints, checkpointProgress, submitCheckpointAnswer } = useData();
   const M = typeMeta[item.type] || { icon: FileText, label: item.type || "Content" };
   const linkedAssessment = item.assessmentId ? assessments.find((a) => a.id === item.assessmentId) : null;
+
+  const readingRef = useRef<HTMLDivElement>(null);
+  const labRef = useRef<HTMLDivElement>(null);
+
+  // Dynamic Auto-Completion for Reading Articles (Scroll depth or short article dwell)
+  useEffect(() => {
+    if (item.type !== "reading") return;
+
+    const dwellTimer = setTimeout(() => {
+      const el = readingRef.current;
+      if (el && el.scrollHeight <= el.clientHeight + 60) {
+        onAutoComplete();
+      }
+    }, 4000);
+
+    const handleScroll = () => {
+      const el = readingRef.current;
+      if (!el) return;
+      const scrollRatio = (el.scrollTop + el.clientHeight) / el.scrollHeight;
+      if (scrollRatio >= 0.88 || el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+        onAutoComplete();
+      }
+    };
+
+    const el = readingRef.current;
+    if (el) {
+      el.addEventListener("scroll", handleScroll);
+    }
+
+    return () => {
+      clearTimeout(dwellTimer);
+      if (el) {
+        el.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, [item.id, item.type, onAutoComplete]);
+
+  // Dynamic Auto-Completion for Labs with Body text
+  useEffect(() => {
+    if (item.type !== "lab" || !item.body) return;
+
+    const dwellTimer = setTimeout(() => {
+      const el = labRef.current;
+      if (el && el.scrollHeight <= el.clientHeight + 60) {
+        onAutoComplete();
+      }
+    }, 4000);
+
+    const handleScroll = () => {
+      const el = labRef.current;
+      if (!el) return;
+      const scrollRatio = (el.scrollTop + el.clientHeight) / el.scrollHeight;
+      if (scrollRatio >= 0.88 || el.scrollHeight - el.scrollTop - el.clientHeight < 60) {
+        onAutoComplete();
+      }
+    };
+
+    const el = labRef.current;
+    if (el) {
+      el.addEventListener("scroll", handleScroll);
+    }
+
+    return () => {
+      clearTimeout(dwellTimer);
+      if (el) {
+        el.removeEventListener("scroll", handleScroll);
+      }
+    };
+  }, [item.id, item.type, item.body, onAutoComplete]);
+
+  // Dynamic Auto-Completion for Image / Diagram Viewers (Dwell timer)
+  useEffect(() => {
+    if (item.type === "image") {
+      const timer = setTimeout(() => {
+        onAutoComplete();
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [item.id, item.type, onAutoComplete]);
 
   const [absoluteUrl, setAbsoluteUrl] = useState("");
 
@@ -804,10 +938,6 @@ function ContentViewer({
       setAbsoluteUrl("");
     }
   }, [item.url]);
-
-  const officeUrl = item.type === "ppt" && absoluteUrl && !absoluteUrl.startsWith("data:")
-    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`
-    : null;
 
   const [pdfOverlayActive, setPdfOverlayActive] = useState(true);
   const scrollTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -832,16 +962,17 @@ function ContentViewer({
     return videoCheckpoints.filter((cp) => cp.contentItemId === item.id);
   }, [videoCheckpoints, item.id]);
 
-  // Add protection event handlers for copy/paste/print/save keys
+  // Add protection event handlers for copy/paste/print/save/DevTools keys
   useEffect(() => {
     const blockKeys = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
       if (
-        (e.ctrlKey && ["p", "s", "c", "a"].includes(e.key.toLowerCase())) ||
         e.key === "F12" ||
-        (e.ctrlKey && e.shiftKey && e.key === "I")
+        ((e.ctrlKey || e.metaKey) && ["p", "s", "u", "a"].includes(key)) ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c", "k"].includes(key))
       ) {
         e.preventDefault();
-        toast.error("Content is copy-protected and cannot be downloaded, printed, or copied.");
+        toast.error("Content is copy-protected and cannot be inspected, downloaded, printed, or saved.");
       }
     };
     window.addEventListener("keydown", blockKeys);
@@ -849,6 +980,11 @@ function ContentViewer({
   }, []);
 
   const handleIframeLoad = (e: React.SyntheticEvent<HTMLIFrameElement>) => {
+    // Auto-complete lab after iframe load dwell
+    setTimeout(() => {
+      onAutoComplete();
+    }, 5000);
+
     try {
       const iframe = e.currentTarget;
       const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -882,40 +1018,62 @@ function ContentViewer({
         </div>
         <div className="flex items-center gap-2">
           {prevItem && (
-            <Button variant="outline" size="sm" onClick={() => onNavigate(prevItem.id)} className="border-border h-9 text-xs">
+            <Button variant="outline" size="sm" onClick={() => onNavigate(prevItem.id)} className="border-border h-9 text-xs cursor-pointer">
               <ChevronLeft className="h-4 w-4 mr-1 text-muted-foreground" /> Prev
             </Button>
           )}
           {nextItem && (
-            <Button variant="outline" size="sm" onClick={() => onNavigate(nextItem.id)} className="border-border h-9 text-xs">
+            <Button variant="outline" size="sm" onClick={() => onNavigate(nextItem.id)} className="border-border h-9 text-xs cursor-pointer">
               Next <ChevronRight className="h-4 w-4 ml-1 text-muted-foreground" />
             </Button>
           )}
-          <Button variant={completed ? "outline" : "default"}
-            className={completed ? "h-9 text-xs" : "gradient-primary text-primary-foreground border-0 h-9 text-xs glow"}
-            onClick={onToggleComplete}>
-            {completed ? "Mark incomplete" : "Mark complete"}
+
+          {/* Dynamic Completion Indicator */}
+          {completed ? (
+            <Badge className="bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 font-semibold px-3 py-1.5 h-9 flex items-center gap-1.5 text-xs shadow-xs">
+              <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+              Completed
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="border-border/80 text-muted-foreground px-3 py-1.5 h-9 flex items-center gap-1.5 text-xs">
+              <Circle className="h-3 w-3 text-muted-foreground" />
+              In Progress
+            </Badge>
+          )}
+
+          {/* Optional manual toggle */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onToggleComplete}
+            className="text-[11px] text-muted-foreground hover:text-foreground h-9 px-2 cursor-pointer"
+            title={completed ? "Mark as Incomplete" : "Mark as Complete"}
+          >
+            {completed ? "Reset" : "Mark done"}
           </Button>
         </div>
       </div>
 
       {item.type === "video" && item.url && (
         <CheckpointVideoPlayer
+          key={item.id}
           url={item.url}
           title={item.title}
           checkpoints={itemCheckpoints}
           progress={checkpointProgress}
           userId={userId}
           onSubmitAnswer={submitCheckpointAnswer}
+          onComplete={onAutoComplete}
         />
       )}
 
       {item.type === "pdf" && item.url && (
-        <SecurePdfViewer url={item.url} title={item.title} />
+        <SecurePdfViewer key={item.id} url={item.url} title={item.title} onComplete={onAutoComplete} />
       )}
 
       {item.type === "image" && item.url && (
         <img
+          key={item.id}
           src={item.url}
           alt={item.title}
           className="max-h-[640px] w-full rounded-xl border border-border object-contain bg-secondary/30"
@@ -925,13 +1083,13 @@ function ContentViewer({
       )}
 
       {item.type === "ppt" && (
-        <SecurePptViewer url={item.url} title={item.title} />
+        <SecurePptViewer key={item.id} url={item.url} title={item.title} onComplete={onAutoComplete} />
       )}
 
 
       {item.type === "assessment" && (
         linkedAssessment ? (
-          <div className="rounded-xl border border-border bg-secondary/40 p-4">
+          <div key={item.id} className="rounded-xl border border-border bg-secondary/40 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="font-semibold">{linkedAssessment.title}</div>
@@ -942,14 +1100,15 @@ function ContentViewer({
               </Button>
             </div>
           </div>
-        ) : <div className="text-sm text-muted-foreground">Assignment or quiz not linked.</div>
+        ) : <div key={item.id} className="text-sm text-muted-foreground">Assignment or quiz not linked.</div>
       )}
 
       {item.type === "reading" && (
-        <div className="rounded-2xl border border-border/70 bg-secondary/10 p-3 sm:p-6 shadow-inner">
+        <div key={item.id} className="rounded-2xl border border-border/70 bg-secondary/10 p-3 sm:p-6 shadow-inner">
           <div
-            className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto min-h-[480px]"
-            dangerouslySetInnerHTML={{ __html: item.body || "<p class='text-muted-foreground'>No content added yet.</p>" }}
+            ref={readingRef}
+            className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto max-h-[750px] overflow-y-auto custom-scrollbar"
+            dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.body || "<p class='text-muted-foreground'>No content added yet.</p>") }}
           />
           <style>{`
             .prose-document h1 { font-size: 2rem !important; font-weight: 700 !important; margin: 0.8em 0 0.4em !important; line-height: 1.25 !important; }
@@ -971,20 +1130,21 @@ function ContentViewer({
       )}
 
       {item.type === "lab" && (
-        <div className="space-y-6">
+        <div key={item.id} className="space-y-6">
           {item.url && (item.url.endsWith(".pdf") || item.url.includes("pdf") || item.url.includes("data:application/pdf")) ? (
-            <SecurePdfViewer url={item.url} title={item.title} />
+            <SecurePdfViewer key={item.id} url={item.url} title={item.title} onComplete={onAutoComplete} />
           ) : item.url && (item.url.endsWith(".ppt") || item.url.endsWith(".pptx") || item.url.includes("ppt") || item.url.includes("presentation")) ? (
-            <SecurePptViewer url={item.url} title={item.title} />
+            <SecurePptViewer key={item.id} url={item.url} title={item.title} onComplete={onAutoComplete} />
           ) : item.url ? (
-            <iframe src={item.url} className="w-full h-[750px] rounded-xl border border-border" title={item.title} onLoad={handleIframeLoad} />
+            <iframe key={item.id} src={item.url} className="w-full h-[750px] rounded-xl border border-border" title={item.title} onLoad={handleIframeLoad} />
           ) : null}
 
           {item.body && (
             <div className="rounded-2xl border border-border/70 bg-secondary/10 p-3 sm:p-6 shadow-inner">
               <div
-                className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto min-h-[300px]"
-                dangerouslySetInnerHTML={{ __html: item.body }}
+                ref={labRef}
+                className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto max-h-[500px] overflow-y-auto custom-scrollbar"
+                dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.body) }}
               />
             </div>
           )}
@@ -993,12 +1153,20 @@ function ContentViewer({
 
       {(item.type === "link" || item.type === "download") && item.url && (
         item.type === "download" ? (
-          <div className="text-xs text-muted-foreground bg-secondary/30 border border-border/40 p-3.5 rounded-xl text-center">
-            🔒 Protected File Download. Direct downloading is disabled for security.
+          <div
+            onClick={() => onAutoComplete()}
+            className="text-xs text-muted-foreground bg-secondary/30 border border-border/40 p-3.5 rounded-xl text-center cursor-pointer hover:bg-secondary/40 transition"
+          >
+            🔒 Protected File Resource. Click to register access.
           </div>
         ) : (
-          <a href={item.url} target="_blank" rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm hover:border-primary/40 transition">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => onAutoComplete()}
+            className="inline-flex items-center gap-2 rounded-xl border border-border bg-secondary/40 px-4 py-3 text-sm hover:border-primary/40 transition cursor-pointer"
+          >
             <Play className="h-4 w-4 text-primary" />Open {M.label.toLowerCase()}
           </a>
         )

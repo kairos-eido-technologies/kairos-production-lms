@@ -191,7 +191,7 @@ function TeacherCertificates() {
           verifyResult.ok && verifyResult.cert ? (
             <div className="rounded-lg border border-success/40 bg-success/10 p-3 text-sm">
               <div className="flex items-center gap-2 text-success font-semibold"><CheckCircle2 className="h-4 w-4" />Verified</div>
-              <div className="mt-1">{studentName(verifyResult.cert.studentId)} — {courseName(verifyResult.cert.courseId)} · {verifyResult.cert.score}% · Issued {verifyResult.cert.issuedAt ?? "—"}</div>
+              <div className="mt-1">{studentName(verifyResult.cert.studentId)} — {courseName(verifyResult.cert.courseId)} · Issued {verifyResult.cert.issuedAt ?? "—"}</div>
               <div className="mt-2 flex gap-2">
                 <Button size="sm" variant="outline" onClick={() => handlePrint(verifyResult.cert!)}><Printer className="h-3 w-3 mr-1" />Print</Button>
               </div>

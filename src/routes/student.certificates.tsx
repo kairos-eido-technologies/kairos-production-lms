@@ -11,6 +11,7 @@ import {
 import { useAuth } from "@/lib/store";
 import { useData } from "@/lib/data-store";
 import { openPrintableCertificate } from "@/lib/certificate";
+import logoSrc from "@/assets/logo.png";
 import type { Certificate } from "@/lib/mock-data";
 
 export const Route = createFileRoute("/student/certificates")({ component: StudentCertificates });
@@ -94,8 +95,7 @@ function StudentCertificates() {
                 }>{c.status}</Badge>
               </div>
               <div className="mt-3 font-semibold leading-tight">{courseName(c.courseId)}</div>
-              <div className="mt-1 text-xs text-muted-foreground">Score {c.score}%</div>
-              <div className="mt-1 text-[10px] font-mono text-muted-foreground truncate">{c.id}</div>
+              <div className="mt-1 text-[11px] font-mono text-muted-foreground truncate">Certificate ID: {c.id}</div>
               {c.rejectionReason && (
                 <div className="mt-2 text-xs text-destructive">{c.rejectionReason}</div>
               )}
@@ -120,22 +120,34 @@ function StudentCertificates() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>Certificate of Completion</DialogTitle>
-            <DialogDescription>Verify at /verify with the certificate ID.</DialogDescription>
           </DialogHeader>
           {viewing && (
-            <div className="rounded-2xl border-2 border-primary/40 bg-gradient-to-br from-background to-secondary/30 p-10 text-center">
-              <Award className="mx-auto h-12 w-12 text-primary mb-4" />
-              <div className="text-xs uppercase tracking-[0.3em] text-muted-foreground">iTech Academy</div>
-              <div className="mt-1 text-sm text-muted-foreground">Certificate of Completion</div>
-              <div className="mt-6 text-3xl font-bold gradient-text">{user?.name}</div>
-              <div className="mt-4 text-sm text-muted-foreground">has successfully completed</div>
-              <div className="mt-2 text-xl font-semibold">{courseName(viewing.courseId)}</div>
-              <div className="mt-6 flex justify-around text-xs text-muted-foreground">
-                <div><div className="font-bold text-foreground">{viewing.score}%</div>Final Score</div>
-                <div><div className="font-bold text-foreground">{viewing.issuedAt ?? "—"}</div>Issued</div>
-                <div><div className="font-bold text-foreground">{teacherName(viewing.courseId)}</div>Instructor</div>
+            <div className="rounded-2xl border-2 border-primary/40 bg-gradient-to-br from-background to-secondary/30 p-8 text-center space-y-4">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                <img src={logoSrc} alt="iTech Academy" className="h-10 w-auto object-contain" />
+                <span className="text-sm font-bold uppercase tracking-[0.2em] text-foreground">iTech Academy</span>
               </div>
-              <div className="mt-6 text-[10px] font-mono text-muted-foreground">ID: {viewing.id}</div>
+              <div className="text-xs uppercase tracking-[0.25em] text-primary font-semibold">Certificate of Completion</div>
+              <div className="text-xs text-muted-foreground italic">This is proudly presented to</div>
+              <div className="text-3xl font-extrabold text-foreground tracking-tight">{user?.name}</div>
+              <div className="text-xs text-muted-foreground">for successfully completing the course</div>
+              <div className="text-xl font-bold text-primary">{courseName(viewing.courseId)}</div>
+              
+              <div className="grid grid-cols-3 gap-2 pt-4 border-t border-border/50 text-xs">
+                <div>
+                  <div className="font-semibold text-foreground">{teacherName(viewing.courseId)}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase">Instructor</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">{viewing.issuedAt ?? new Date().toISOString().slice(0, 10)}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase">Date Issued</div>
+                </div>
+                <div>
+                  <div className="font-semibold text-foreground">Ram Subramaniyan</div>
+                  <div className="text-[10px] text-muted-foreground uppercase">Owner, iTech</div>
+                </div>
+              </div>
+              <div className="pt-2 text-[11px] font-mono text-muted-foreground">Certificate ID: {viewing.id}</div>
             </div>
           )}
         </DialogContent>

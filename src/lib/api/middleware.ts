@@ -12,8 +12,8 @@ function getTokenFromRequest(request: Request): string | null {
   return match?.[1] ?? null;
 }
 
-export const withAuth = createMiddleware(async (opts) => {
-  const token = getTokenFromRequest(opts.request);
+export const withAuth = createMiddleware().server(async ({ next, request }: any) => {
+  const token = getTokenFromRequest(request);
 
   if (!token) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -30,12 +30,12 @@ export const withAuth = createMiddleware(async (opts) => {
     });
   }
 
-  (opts.request as any).user = payload;
-  return opts.next();
+  (request as any).user = payload;
+  return next();
 });
 
-export const withAdminAuth = createMiddleware(async (opts) => {
-  const token = getTokenFromRequest(opts.request);
+export const withAdminAuth = createMiddleware().server(async ({ next, request }: any) => {
+  const token = getTokenFromRequest(request);
 
   if (!token) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -52,6 +52,6 @@ export const withAdminAuth = createMiddleware(async (opts) => {
     });
   }
 
-  (opts.request as any).user = payload;
-  return opts.next();
+  (request as any).user = payload;
+  return next();
 });

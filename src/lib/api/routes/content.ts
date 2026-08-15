@@ -111,6 +111,7 @@ const PUBLIC_PATHS = new Set([
   "/api/auth/verify-email",
   "/api/auth/session",
   "/api/files", // file downloads used by Office viewer (public)
+  "/api/certificates/verify",
   "/api/test-emails",
 ]);
 
@@ -118,8 +119,8 @@ function requireAuth(request: Request): Response | null {
   const url = new URL(request.url);
   if (PUBLIC_PATHS.has(url.pathname)) return null;
 
-  // Allow anonymous access only for fetching the course catalog list (GET /api/courses)
-  if (request.method === "GET" && url.pathname === "/api/courses") {
+  // Allow anonymous access for certificate viewing/verification and course catalog list
+  if (request.method === "GET" && (url.pathname === "/api/courses" || url.pathname.startsWith("/api/certificates/"))) {
     return null;
   }
 
@@ -175,14 +176,16 @@ export async function contentRoute(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const path = url.pathname;
 
+    // Security: authenticate every request before touching the DB (allow-listed public paths pass through)
+    const authError = requireAuth(request);
+    if (authError) return authError;
+
     let db: any = null;
     try {
       if (isDatabaseHealthy()) {
         db = getDb();
       }
     } catch (dbErr) {}
-
-    // ── Security: authenticate every request before touching the DB ───────────
     // ==========================================
     // USERS API
     // ==========================================
@@ -489,66 +492,121 @@ export async function contentRoute(request: Request): Promise<Response> {
       let allEnrollments: any[] = [];
 
       try {
-        const { data: sCourses } = await supabase.from("courses").select("*");
-        const { data: sSections } = await supabase.from("sections").select("*");
-        const { data: sItems } = await supabase.from("content_items").select("*");
-        const { data: sEnrollments } = await supabase.from("enrollments").select("*");
+        const dCourses = await db.query.courses.findMany();
+        const dSections = await db.query.sections.findMany();
+        const dItems = await db.query.contentItems.findMany();
+        const dEnrollments = await db.query.enrollments.findMany();
 
-        if (sCourses && sCourses.length > 0) {
-          allCourses = sCourses.map((c: any) => ({
+        if (dCourses && dCourses.length > 0) {
+          allCourses = dCourses.map((c: any) => ({
             id: c.id,
             code: c.code,
             name: c.name,
             description: c.description,
-            category: c.category,
-            level: c.level,
-            duration: c.duration,
             thumbnail: c.thumbnail,
-            teacherId: c.teacher_id || c.teacherId,
-            prerequisiteId: c.prerequisite_id || c.prerequisiteId,
+            teacherId: c.teacherId,
             status: c.status || "active",
-            showInPreview: c.show_in_preview ?? c.showInPreview ?? true,
-            previewVideoUrl: c.preview_video_url || c.previewVideoUrl,
-            startDate: c.start_date || c.startDate,
-            endDate: c.end_date || c.endDate,
+            showInPreview: c.showInPreview ?? true,
+            previewVideoUrl: c.previewVideoUrl || "",
+            badgeTag: c.badgeTag || "",
+            featuredBadgeText: c.featuredBadgeText || "",
+            durationText: c.durationText || "",
+            projectsText: c.projectsText || "",
+            techStack: c.techStack || [],
+            startDate: c.startDate,
+            endDate: c.endDate,
           }));
-        }
-
-        if (sSections) {
-          allSections = sSections.map((s: any) => ({
+          allSections = dSections.map((s: any) => ({
             id: s.id,
-            courseId: s.course_id || s.courseId,
+            courseId: s.courseId,
             title: s.title,
             order: s.order ?? 0,
           }));
-        }
-
-        if (sItems) {
-          allItems = sItems.map((it: any) => ({
+          allItems = dItems.map((it: any) => ({
             id: it.id,
-            sectionId: it.section_id || it.sectionId,
+            sectionId: it.sectionId,
             type: it.type,
             title: it.title,
             body: it.body,
             url: it.url,
-            fileName: it.file_name || it.fileName,
+            fileName: it.fileName,
             duration: it.duration,
-            fileSize: it.file_size || it.fileSize,
-            assessmentId: it.assessment_id || it.assessmentId,
+            fileSize: it.fileSize,
+            assessmentId: it.assessmentId,
             order: it.order ?? 0,
           }));
-        }
-
-        if (sEnrollments) {
-          allEnrollments = sEnrollments.map((e: any) => ({
+          allEnrollments = dEnrollments.map((e: any) => ({
             id: e.id,
-            studentId: e.student_id || e.studentId,
-            courseId: e.course_id || e.courseId,
-            accessMode: e.access_mode || e.accessMode || "lifetime",
-            endDate: e.end_date || e.endDate,
+            studentId: e.studentId,
+            courseId: e.courseId,
+            accessMode: e.accessMode || "lifetime",
+            endDate: e.endDate,
           }));
         }
-      } catch (sErr) {}
+      } catch (dbErr) {
+        try {
+          const { data: sCourses } = await supabase.from("courses").select("*");
+          const { data: sSections } = await supabase.from("sections").select("*");
+          const { data: sItems } = await supabase.from("content_items").select("*");
+          const { data: sEnrollments } = await supabase.from("enrollments").select("*");
+
+          if (sCourses && sCourses.length > 0) {
+            allCourses = sCourses.map((c: any) => ({
+              id: c.id,
+              code: c.code,
+              name: c.name,
+              description: c.description,
+              thumbnail: c.thumbnail,
+              teacherId: c.teacher_id || c.teacherId,
+              status: c.status || "active",
+              showInPreview: c.show_in_preview ?? c.showInPreview ?? true,
+              previewVideoUrl: c.preview_video_url || c.previewVideoUrl || "",
+              badgeTag: c.badge_tag || c.badgeTag || "",
+              featuredBadgeText: c.featured_badge_text || c.featuredBadgeText || "",
+              durationText: c.duration_text || c.durationText || "",
+              projectsText: c.projects_text || c.projectsText || "",
+              techStack: c.tech_stack || c.techStack || [],
+              startDate: c.start_date || c.startDate,
+              endDate: c.end_date || c.endDate,
+            }));
+          }
+
+          if (sSections) {
+            allSections = sSections.map((s: any) => ({
+              id: s.id,
+              courseId: s.course_id || s.courseId,
+              title: s.title,
+              order: s.order ?? 0,
+            }));
+          }
+
+          if (sItems) {
+            allItems = sItems.map((it: any) => ({
+              id: it.id,
+              sectionId: it.section_id || it.sectionId,
+              type: it.type,
+              title: it.title,
+              body: it.body,
+              url: it.url,
+              fileName: it.file_name || it.fileName,
+              duration: it.duration,
+              fileSize: it.file_size || it.fileSize,
+              assessmentId: it.assessment_id || it.assessmentId,
+              order: it.order ?? 0,
+            }));
+          }
+
+          if (sEnrollments) {
+            allEnrollments = sEnrollments.map((e: any) => ({
+              id: e.id,
+              studentId: e.student_id || e.studentId,
+              courseId: e.course_id || e.courseId,
+              accessMode: e.access_mode || e.accessMode || "lifetime",
+              endDate: e.end_date || e.endDate,
+            }));
+          }
+        } catch (sErr) {}
+      }
 
       if (allCourses.length === 0) {
         const cached = serverStore.getCourses();
@@ -707,16 +765,19 @@ export async function contentRoute(request: Request): Promise<Response> {
         };
       }
 
+      const courseObj = {
+        ...created,
+        startDate: created?.startDate ? created.startDate.toISOString().slice(0, 10) : "",
+        endDate: created?.endDate ? created.endDate.toISOString().slice(0, 10) : "",
+        studentIds: createdEnrollments.map((e: any) => e.studentId),
+        studentAccess,
+        sections: [],
+      };
+      serverStore.addCourse(courseObj);
+
       return new Response(
         JSON.stringify({
-          course: {
-            ...created,
-            startDate: created?.startDate ? created.startDate.toISOString().slice(0, 10) : "",
-            endDate: created?.endDate ? created.endDate.toISOString().slice(0, 10) : "",
-            studentIds: createdEnrollments.map((e: any) => e.studentId),
-            studentAccess,
-            sections: [],
-          },
+          course: courseObj,
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -835,23 +896,26 @@ export async function contentRoute(request: Request): Promise<Response> {
       const allSections = await db.select().from(sections).where(eq(sections.courseId, id));
       const allItems = await db.select().from(contentItems);
 
+      const courseObj = {
+        ...updated,
+        startDate: updated?.startDate ? updated.startDate.toISOString().slice(0, 10) : "",
+        endDate: updated?.endDate ? updated.endDate.toISOString().slice(0, 10) : "",
+        studentIds: updatedEnrollments.map((e: any) => e.studentId),
+        studentAccess,
+        sections: allSections
+          .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
+          .map((s: any) => ({
+            ...s,
+            items: allItems
+              .filter((it: any) => it.sectionId === s.id)
+              .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)),
+          })),
+      };
+      serverStore.addCourse(courseObj);
+
       return new Response(
         JSON.stringify({
-          course: {
-            ...updated,
-            startDate: updated?.startDate ? updated.startDate.toISOString().slice(0, 10) : "",
-            endDate: updated?.endDate ? updated.endDate.toISOString().slice(0, 10) : "",
-            studentIds: updatedEnrollments.map((e: any) => e.studentId),
-            studentAccess,
-            sections: allSections
-              .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
-              .map((s: any) => ({
-                ...s,
-                items: allItems
-                  .filter((it: any) => it.sectionId === s.id)
-                  .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0)),
-              })),
-          },
+          course: courseObj,
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -1096,6 +1160,128 @@ export async function contentRoute(request: Request): Promise<Response> {
     // CERTIFICATES API
     // ==========================================
 
+    // GET /api/certificates/verify -> Public certificate verification
+    if (request.method === "GET" && path === "/api/certificates/verify") {
+      const certId = url.searchParams.get("id")?.trim();
+      if (!certId) {
+        return new Response(JSON.stringify({ ok: false, error: "Missing certificate ID" }), {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      let cert: any = null;
+      let student: any = null;
+      let course: any = null;
+
+      try {
+        const { data: sCert } = await supabase
+          .from("certificates")
+          .select("*")
+          .ilike("id", certId)
+          .eq("status", "approved")
+          .maybeSingle();
+
+        if (sCert) {
+          cert = sCert;
+          const { data: sStudent } = await supabase.from("users").select("id, name, email").eq("id", sCert.student_id).maybeSingle();
+          const { data: sCourse } = await supabase.from("courses").select("id, name, code").eq("id", sCert.course_id).maybeSingle();
+          student = sStudent;
+          course = sCourse;
+        }
+      } catch (err) {}
+
+      if (!cert) {
+        const localCert = serverStore.getCertificates().find((c) => c.id.toLowerCase() === certId.toLowerCase() && c.status === "approved");
+        if (localCert) {
+          cert = localCert;
+          student = serverStore.getUserById(localCert.studentId);
+          course = serverStore.getCourses().find((c) => c.id === localCert.courseId);
+        }
+      }
+
+      if (!cert) {
+        return new Response(JSON.stringify({ ok: false, error: "Certificate not found or not approved" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          certificate: {
+            id: cert.id,
+            score: typeof cert.score === "number" ? cert.score : (parseInt(cert.score, 10) || 100),
+            status: cert.status,
+            issuedAt: cert.issued_at ? String(cert.issued_at).slice(0, 10) : (cert.issuedAt || new Date().toISOString().slice(0, 10)),
+            studentName: student?.name || "Student",
+            studentEmail: student?.email || "",
+            courseName: course?.name || "Course",
+            courseCode: course?.code || "",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
+    // GET /api/certificates/:id -> retrieve certificate by ID
+    if (request.method === "GET" && path.startsWith("/api/certificates/") && !path.includes("/approve") && !path.includes("/reject")) {
+      const certId = path.slice("/api/certificates/".length).trim();
+      let cert: any = null;
+      let student: any = null;
+      let course: any = null;
+
+      try {
+        const { data: sCert } = await supabase
+          .from("certificates")
+          .select("*")
+          .ilike("id", certId)
+          .maybeSingle();
+
+        if (sCert) {
+          cert = sCert;
+          const { data: sStudent } = await supabase.from("users").select("id, name, email").eq("id", sCert.student_id).maybeSingle();
+          const { data: sCourse } = await supabase.from("courses").select("id, name, code").eq("id", sCert.course_id).maybeSingle();
+          student = sStudent;
+          course = sCourse;
+        }
+      } catch (err) {}
+
+      if (!cert) {
+        const localCert = serverStore.getCertificates().find((c) => c.id.toLowerCase() === certId.toLowerCase());
+        if (localCert) {
+          cert = localCert;
+          student = serverStore.getUserById(localCert.studentId);
+          course = serverStore.getCourses().find((c) => c.id === localCert.courseId);
+        }
+      }
+
+      if (!cert) {
+        return new Response(JSON.stringify({ ok: false, error: "Certificate not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          certificate: {
+            id: cert.id,
+            score: typeof cert.score === "number" ? cert.score : (parseInt(cert.score, 10) || 100),
+            status: cert.status,
+            issuedAt: cert.issued_at ? String(cert.issued_at).slice(0, 10) : (cert.issuedAt || new Date().toISOString().slice(0, 10)),
+            studentName: student?.name || "Student",
+            studentEmail: student?.email || "",
+            courseName: course?.name || "Course",
+            courseCode: course?.code || "",
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
+    }
+
     // GET /api/certificates
     if (request.method === "GET" && path === "/api/certificates") {
       const status = url.searchParams.get("status");
@@ -1111,9 +1297,11 @@ export async function contentRoute(request: Request): Promise<Response> {
             id: c.id,
             studentId: c.student_id || c.studentId,
             courseId: c.course_id || c.courseId,
-            requestedAt: c.requested_at ? c.requested_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            score: typeof c.score === "number" ? c.score : (parseInt(c.score, 10) || 100),
+            requestedAt: c.requested_at ? String(c.requested_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
             status: c.status,
-            issuedAt: c.issued_at ? c.issued_at.slice(0, 10) : undefined,
+            issuedAt: c.issued_at ? String(c.issued_at).slice(0, 10) : (c.issuedAt ? String(c.issuedAt).slice(0, 10) : undefined),
+            teacherNote: c.teacher_note || c.teacherNote || undefined,
             rejectionReason: c.rejection_reason || c.rejectionReason || undefined,
             proctorLog: (c.proctor_log || c.proctorLog) ?? undefined,
           }));
@@ -1137,37 +1325,68 @@ export async function contentRoute(request: Request): Promise<Response> {
       const body = await request.json();
       const id = body.id || makeId();
       const requestedAt = body.requestedAt ? new Date(body.requestedAt) : new Date();
-      await db.insert(certificates).values({
+      let created: any = {
         id,
         studentId: body.studentId,
         courseId: body.courseId,
-        score: body.score,
+        score: typeof body.score === "number" ? body.score : (parseInt(body.score, 10) || 100),
         status: body.status || "pending",
-        requestedAt,
-        issuedAt: body.issuedAt ? new Date(body.issuedAt) : null,
-        teacherNote: body.teacherNote || null,
-        rejectionReason: body.rejectionReason || null,
-        proctorLog: body.proctorLog || null,
-      });
-      const created = await db.query.certificates.findFirst({ where: eq(certificates.id, id) });
+        requestedAt: requestedAt.toISOString().slice(0, 10),
+        issuedAt: body.issuedAt ? String(body.issuedAt).slice(0, 10) : undefined,
+        teacherNote: body.teacherNote || undefined,
+        rejectionReason: body.rejectionReason || undefined,
+        proctorLog: body.proctorLog || undefined,
+      };
 
       try {
-        if (created) {
-          const student = await db.query.users.findFirst({ where: eq(users.id, created.studentId) });
-          const course = await db.query.courses.findFirst({ where: eq(courses.id, created.courseId) });
-          if (student && course) {
-            const teacher = course.teacherId ? await db.query.users.findFirst({ where: eq(users.id, course.teacherId) }) : null;
-            if (teacher) {
-              sendCertificateRequestedEmail(teacher.email, teacher.name, student.name, course.name).catch(console.error);
-              await insertNotification(db, teacher.id, "Certificate Request", `${student.name} requested a certificate for "${course.name}".`, `/teacher/certificates`);
-              await insertMessage(db, student.id, teacher.id, "Certificate Request: " + course.name, `Hello Instructor ${teacher.name},\n\nI have completed all assessments for "${course.name}" and requested my certificate of completion.`);
-            }
-            const adminUsers = await db.select().from(users).where(eq(users.role, "admin"));
-            for (const admin of adminUsers) {
-              sendCertificateRequestedEmail(admin.email, admin.name, student.name, course.name).catch(console.error);
-              await insertNotification(db, admin.id, "Certificate Request", `${student.name} requested a certificate for "${course.name}".`, `/admin/certificates`);
-              await insertMessage(db, student.id, admin.id, "Certificate Request: " + course.name, `Hello Admin ${admin.name},\n\nI have completed all assessments for "${course.name}" and requested my certificate of completion.`);
-            }
+        await supabase.from("certificates").insert({
+          id,
+          student_id: body.studentId,
+          course_id: body.courseId,
+          score: created.score,
+          status: created.status,
+          requested_at: requestedAt.toISOString(),
+          issued_at: body.issuedAt ? new Date(body.issuedAt).toISOString() : null,
+          teacher_note: body.teacherNote || null,
+          rejection_reason: body.rejectionReason || null,
+          proctor_log: body.proctorLog || null,
+        });
+      } catch (sErr) {}
+
+      serverStore.saveCertificate(created);
+
+      try {
+        if (db) {
+          await db.insert(certificates).values({
+            id,
+            studentId: body.studentId,
+            courseId: body.courseId,
+            score: created.score,
+            status: created.status,
+            requestedAt,
+            issuedAt: body.issuedAt ? new Date(body.issuedAt) : null,
+            teacherNote: body.teacherNote || null,
+            rejectionReason: body.rejectionReason || null,
+            proctorLog: body.proctorLog || null,
+          });
+        }
+      } catch (dbErr) {}
+
+      try {
+        const student = serverStore.getUserById(created.studentId);
+        const course = serverStore.getCourses().find((c: any) => c.id === created.courseId);
+        if (student && course) {
+          const teacher = course.teacherId ? serverStore.getUserById(course.teacherId) : null;
+          if (teacher) {
+            sendCertificateRequestedEmail(teacher.email, teacher.name, student.name, course.name).catch(console.error);
+            await insertNotification(db, teacher.id, "Certificate Request", `${student.name} requested a certificate for "${course.name}".`, `/teacher/certificates`);
+            await insertMessage(db, student.id, teacher.id, "Certificate Request: " + course.name, `Hello Instructor ${teacher.name},\n\nI have completed all assessments for "${course.name}" and requested my certificate of completion.`);
+          }
+          const adminUsers = serverStore.getAllUsers().filter((u: any) => u.role === "admin");
+          for (const admin of adminUsers) {
+            sendCertificateRequestedEmail(admin.email, admin.name, student.name, course.name).catch(console.error);
+            await insertNotification(db, admin.id, "Certificate Request", `${student.name} requested a certificate for "${course.name}".`, `/admin/certificates`);
+            await insertMessage(db, student.id, admin.id, "Certificate Request: " + course.name, `Hello Admin ${admin.name},\n\nI have completed all assessments for "${course.name}" and requested my certificate of completion.`);
           }
         }
       } catch (err) {
@@ -1175,16 +1394,7 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       return new Response(
-        JSON.stringify({
-          certificate: created
-            ? {
-                ...created,
-                requestedAt: created.requestedAt.toISOString().slice(0, 10),
-                issuedAt: created.issuedAt ? created.issuedAt.toISOString().slice(0, 10) : undefined,
-                proctorLog: (created.proctorLog as any[]) ?? undefined,
-              }
-            : null,
-        }),
+        JSON.stringify({ certificate: created }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -1192,13 +1402,29 @@ export async function contentRoute(request: Request): Promise<Response> {
     // PUT /api/certificates/:id/approve
     if (request.method === "PUT" && path.startsWith("/api/certificates/") && path.endsWith("/approve")) {
       const id = path.slice("/api/certificates/".length, -"/approve".length);
-      await db.update(certificates).set({ status: "approved", issuedAt: new Date() }).where(eq(certificates.id, id));
-      const updated = await db.query.certificates.findFirst({ where: eq(certificates.id, id) });
+      const issuedAt = new Date().toISOString().slice(0, 10);
+      let updated: any = { id, status: "approved", issuedAt };
+
+      try {
+        await supabase.from("certificates").update({
+          status: "approved",
+          issued_at: new Date().toISOString(),
+        }).eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getCertificates().find((c: any) => c.id === id);
+      updated = serverStore.saveCertificate({ ...(existing || {}), ...updated, status: "approved", issuedAt });
+
+      try {
+        if (db) {
+          await db.update(certificates).set({ status: "approved", issuedAt: new Date() }).where(eq(certificates.id, id));
+        }
+      } catch (dbErr) {}
 
       try {
         if (updated) {
-          const student = await db.query.users.findFirst({ where: eq(users.id, updated.studentId) });
-          const course = await db.query.courses.findFirst({ where: eq(courses.id, updated.courseId) });
+          const student = serverStore.getUserById(updated.studentId);
+          const course = serverStore.getCourses().find((c: any) => c.id === updated.courseId);
           if (student && course) {
             sendCertificateApprovedEmail(student.email, student.name, course.name).catch(console.error);
             await insertNotification(db, student.id, "Certificate Approved", `Your certificate for "${course.name}" has been approved!`, `/student/certificates`);
@@ -1211,16 +1437,7 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       return new Response(
-        JSON.stringify({
-          certificate: updated
-            ? {
-                ...updated,
-                requestedAt: updated.requestedAt.toISOString().slice(0, 10),
-                issuedAt: updated.issuedAt ? updated.issuedAt.toISOString().slice(0, 10) : undefined,
-                proctorLog: (updated.proctorLog as any[]) ?? undefined,
-              }
-            : null,
-        }),
+        JSON.stringify({ certificate: updated }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -1229,16 +1446,28 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "PUT" && path.startsWith("/api/certificates/") && path.endsWith("/reject")) {
       const id = path.slice("/api/certificates/".length, -"/reject".length);
       const body = await request.json();
-      await db
-        .update(certificates)
-        .set({ status: "rejected", rejectionReason: body.reason || null })
-        .where(eq(certificates.id, id));
-      const updated = await db.query.certificates.findFirst({ where: eq(certificates.id, id) });
+      let updated: any = { id, status: "rejected", rejectionReason: body.reason || null };
+
+      try {
+        await supabase.from("certificates").update({
+          status: "rejected",
+          rejection_reason: body.reason || null,
+        }).eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getCertificates().find((c: any) => c.id === id);
+      updated = serverStore.saveCertificate({ ...(existing || {}), ...updated, status: "rejected", rejectionReason: body.reason || null });
+
+      try {
+        if (db) {
+          await db.update(certificates).set({ status: "rejected", rejectionReason: body.reason || null }).where(eq(certificates.id, id));
+        }
+      } catch (dbErr) {}
 
       try {
         if (updated) {
-          const student = await db.query.users.findFirst({ where: eq(users.id, updated.studentId) });
-          const course = await db.query.courses.findFirst({ where: eq(courses.id, updated.courseId) });
+          const student = serverStore.getUserById(updated.studentId);
+          const course = serverStore.getCourses().find((c: any) => c.id === updated.courseId);
           if (student && course) {
             sendCertificateRejectedEmail(student.email, student.name, course.name, body.reason || "No reason specified").catch(console.error);
             await insertNotification(db, student.id, "Certificate Request Update", `Your certificate request for "${course.name}" was declined.`, `/student/certificates`);
@@ -1251,18 +1480,34 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       return new Response(
-        JSON.stringify({
-          certificate: updated
-            ? {
-                ...updated,
-                requestedAt: updated.requestedAt.toISOString().slice(0, 10),
-                issuedAt: updated.issuedAt ? updated.issuedAt.toISOString().slice(0, 10) : undefined,
-                proctorLog: (updated.proctorLog as any[]) ?? undefined,
-              }
-            : null,
-        }),
+        JSON.stringify({ certificate: updated }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
+    }
+
+    // PUT /api/certificates/:id (general update)
+    if (request.method === "PUT" && path.startsWith("/api/certificates/")) {
+      const id = path.slice("/api/certificates/".length);
+      const body = await request.json();
+      let updated: any = { id, ...body };
+
+      try {
+        const updateData: any = {};
+        if (body.status !== undefined) updateData.status = body.status;
+        if (body.teacherNote !== undefined) updateData.teacher_note = body.teacherNote;
+        if (body.rejectionReason !== undefined) updateData.rejection_reason = body.rejectionReason;
+        if (body.status === "approved") updateData.issued_at = new Date().toISOString();
+
+        await supabase.from("certificates").update(updateData).eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getCertificates().find((c: any) => c.id === id);
+      updated = serverStore.saveCertificate({ ...(existing || {}), ...body, id });
+
+      return new Response(JSON.stringify({ certificate: updated }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
     }
 
     // ==========================================
@@ -1285,11 +1530,13 @@ export async function contentRoute(request: Request): Promise<Response> {
               const list = questionsMap.get(aId) || [];
               list.push({
                 id: q.id,
-                text: q.text,
-                type: q.type,
-                options: (q.options as string[]) ?? undefined,
-                correctAnswer: (q.correct_answer || q.correctAnswer) ?? undefined,
-                points: q.points,
+                prompt: q.prompt || q.text || "",
+                type: q.type || "mcq",
+                options: (q.options as string[]) ?? [],
+                correctIndex: typeof q.correct_index === "number" ? q.correct_index : (q.correctIndex ?? 0),
+                points: q.points ?? 1,
+                imageUrl: q.image_url || q.imageUrl || undefined,
+                order: q.order ?? 0,
               });
               questionsMap.set(aId, list);
             }
@@ -1299,13 +1546,13 @@ export async function contentRoute(request: Request): Promise<Response> {
             id: a.id,
             courseId: a.course_id || a.courseId,
             title: a.title,
-            description: a.description || undefined,
-            duration: a.duration,
-            attempts: a.attempts,
-            passingScore: a.passing_score || a.passingScore,
-            dueDate: a.due_date ? a.due_date.slice(0, 10) : undefined,
-            isFinal: a.is_final ?? a.isFinal,
-            questions: questionsMap.get(a.id) || [],
+            timeLimit: a.time_limit || a.timeLimit || a.duration || 10,
+            passingScore: a.passing_score || a.passingScore || 70,
+            attempts: a.attempts ?? 1,
+            questionCount: questionsMap.get(a.id)?.length || a.question_count || a.questionCount || 0,
+            proctored: a.proctored ?? false,
+            isFinal: a.is_final ?? a.isFinal ?? false,
+            questions: (questionsMap.get(a.id) || []).sort((x: any, y: any) => (x.order ?? 0) - (y.order ?? 0)),
           }));
           serverStore.setAssessments(mapped);
         }
@@ -1325,7 +1572,7 @@ export async function contentRoute(request: Request): Promise<Response> {
     if (request.method === "POST" && path === "/api/assessments") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(assessments).values({
+      let created: any = {
         id,
         courseId: body.courseId,
         title: body.title || "Quiz",
@@ -1335,10 +1582,42 @@ export async function contentRoute(request: Request): Promise<Response> {
         questionCount: 0,
         proctored: body.proctored ?? false,
         isFinal: body.isFinal ?? false,
-      });
+        questions: [],
+      };
 
-      const created = await db.query.assessments.findFirst({ where: eq(assessments.id, id) });
-      return new Response(JSON.stringify({ assessment: { ...created, questions: [], questionCount: 0 } }), {
+      try {
+        await supabase.from("assessments").insert({
+          id,
+          course_id: body.courseId,
+          title: body.title || "Quiz",
+          time_limit: body.timeLimit ?? 10,
+          passing_score: body.passingScore ?? 70,
+          attempts: body.attempts ?? 1,
+          question_count: 0,
+          proctored: body.proctored ?? false,
+          is_final: body.isFinal ?? false,
+        });
+      } catch (sErr) {}
+
+      serverStore.saveAssessment(created);
+
+      try {
+        if (db) {
+          await db.insert(assessments).values({
+            id,
+            courseId: body.courseId,
+            title: body.title || "Quiz",
+            timeLimit: body.timeLimit ?? 10,
+            passingScore: body.passingScore ?? 70,
+            attempts: body.attempts ?? 1,
+            questionCount: 0,
+            proctored: body.proctored ?? false,
+            isFinal: body.isFinal ?? false,
+          });
+        }
+      } catch (dbErr) {}
+
+      return new Response(JSON.stringify({ assessment: created }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -1349,17 +1628,28 @@ export async function contentRoute(request: Request): Promise<Response> {
       const id = path.slice("/api/assessments/".length);
       const body = await request.json();
 
-      const updateData: any = {};
-      if (body.title !== undefined) updateData.title = body.title;
-      if (body.timeLimit !== undefined) updateData.timeLimit = body.timeLimit;
-      if (body.passingScore !== undefined) updateData.passingScore = body.passingScore;
-      if (body.attempts !== undefined) updateData.attempts = body.attempts;
-      if (body.proctored !== undefined) updateData.proctored = body.proctored;
-      if (body.isFinal !== undefined) updateData.isFinal = body.isFinal;
-      if (body.questionCount !== undefined) updateData.questionCount = body.questionCount;
+      try {
+        const updateData: any = {};
+        if (body.title !== undefined) updateData.title = body.title;
+        if (body.timeLimit !== undefined) updateData.time_limit = body.timeLimit;
+        if (body.passingScore !== undefined) updateData.passing_score = body.passingScore;
+        if (body.attempts !== undefined) updateData.attempts = body.attempts;
+        if (body.proctored !== undefined) updateData.proctored = body.proctored;
+        if (body.isFinal !== undefined) updateData.is_final = body.isFinal;
+        if (body.questionCount !== undefined) updateData.question_count = body.questionCount;
 
-      await db.update(assessments).set(updateData).where(eq(assessments.id, id));
-      const updated = await db.query.assessments.findFirst({ where: eq(assessments.id, id) });
+        await supabase.from("assessments").update(updateData).eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getAssessments().find((a: any) => a.id === id);
+      const updated = serverStore.saveAssessment({ ...(existing || {}), ...body, id });
+
+      try {
+        if (db) {
+          await db.update(assessments).set(body).where(eq(assessments.id, id));
+        }
+      } catch (dbErr) {}
+
       return new Response(JSON.stringify({ assessment: updated }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1369,7 +1659,19 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/assessments/:id -> delete assessment
     if (request.method === "DELETE" && path.startsWith("/api/assessments/")) {
       const id = path.slice("/api/assessments/".length);
-      await db.delete(assessments).where(eq(assessments.id, id));
+      try {
+        await supabase.from("questions").delete().eq("assessment_id", id);
+        await supabase.from("assessments").delete().eq("id", id);
+      } catch (sErr) {}
+
+      serverStore.deleteAssessment(id);
+
+      try {
+        if (db) {
+          await db.delete(assessments).where(eq(assessments.id, id));
+        }
+      } catch (dbErr) {}
+
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1380,31 +1682,82 @@ export async function contentRoute(request: Request): Promise<Response> {
     // QUESTIONS API
     // ==========================================
 
+    // GET /api/questions -> list questions (optionally filter by assessmentId)
+    if (request.method === "GET" && path === "/api/questions") {
+      const assessmentId = url.searchParams.get("assessmentId");
+      let mapped: any[] = [];
+
+      try {
+        let query = supabase.from("questions").select("*");
+        if (assessmentId) query = query.eq("assessment_id", assessmentId);
+        const { data: sQuestions } = await query;
+
+        if (sQuestions && sQuestions.length > 0) {
+          mapped = sQuestions.map((q: any) => ({
+            id: q.id,
+            assessmentId: q.assessment_id || q.assessmentId,
+            type: q.type || "mcq",
+            prompt: q.prompt || q.text || "",
+            options: (q.options as string[]) ?? [],
+            correctIndex: typeof q.correct_index === "number" ? q.correct_index : (q.correctIndex ?? 0),
+            points: q.points ?? 1,
+            imageUrl: q.image_url || q.imageUrl || undefined,
+            order: q.order ?? 0,
+          }));
+        }
+      } catch (sErr) {}
+
+      if (mapped.length === 0) {
+        mapped = serverStore.getQuestions();
+        if (assessmentId) mapped = mapped.filter((q: any) => q.assessmentId === assessmentId);
+      }
+
+      mapped.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+      return new Response(JSON.stringify({ questions: mapped }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
     // POST /api/questions -> create question
     if (request.method === "POST" && path === "/api/questions") {
       const body = await request.json();
       const id = body.id || makeId();
-      await db.insert(questions).values({
+      let created: any = {
         id,
         assessmentId: body.assessmentId,
-        type: body.type,
+        type: body.type || "mcq",
         prompt: body.prompt || "",
         options: body.options ?? null,
         correctIndex: body.correctIndex ?? null,
         points: body.points ?? 1,
         imageUrl: body.imageUrl ?? null,
         order: body.order ?? 0,
-      });
+      };
 
-      // Update question count on assessment
-      const assId = body.assessmentId;
-      const countResult = await db.select().from(questions).where(eq(questions.assessmentId, assId));
-      await db
-        .update(assessments)
-        .set({ questionCount: countResult.length })
-        .where(eq(assessments.id, assId));
+      try {
+        await supabase.from("questions").insert({
+          id,
+          assessment_id: body.assessmentId,
+          type: body.type || "mcq",
+          prompt: body.prompt || "",
+          options: body.options ?? null,
+          correct_index: body.correctIndex ?? null,
+          points: body.points ?? 1,
+          image_url: body.imageUrl ?? null,
+          order: body.order ?? 0,
+        });
+      } catch (sErr) {}
 
-      const created = await db.query.questions.findFirst({ where: eq(questions.id, id) });
+      serverStore.saveQuestion(created);
+
+      try {
+        if (db) {
+          await db.insert(questions).values(created);
+        }
+      } catch (dbErr) {}
+
       return new Response(JSON.stringify({ question: created }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1422,32 +1775,40 @@ export async function contentRoute(request: Request): Promise<Response> {
         });
       }
 
-      const existingQs = await db.select().from(questions).where(eq(questions.assessmentId, assessmentId));
-      let currentOrder = existingQs.length;
       const createdQs = [];
+      let orderIndex = 0;
 
       for (const q of qs) {
         const id = q.id || makeId();
-        await db.insert(questions).values({
+        const item = {
           id,
           assessmentId,
-          type: q.type,
+          type: q.type || "mcq",
           prompt: q.prompt || "",
           options: q.options ?? null,
           correctIndex: q.correctIndex ?? null,
           points: q.points ?? 1,
           imageUrl: q.imageUrl ?? null,
-          order: currentOrder++,
-        });
-        const created = await db.query.questions.findFirst({ where: eq(questions.id, id) });
-        if (created) createdQs.push(created);
-      }
+          order: orderIndex++,
+        };
 
-      // Update question count on assessment
-      await db
-        .update(assessments)
-        .set({ questionCount: currentOrder })
-        .where(eq(assessments.id, assessmentId));
+        try {
+          await supabase.from("questions").insert({
+            id,
+            assessment_id: assessmentId,
+            type: item.type,
+            prompt: item.prompt,
+            options: item.options,
+            correct_index: item.correctIndex,
+            points: item.points,
+            image_url: item.imageUrl,
+            order: item.order,
+          });
+        } catch (sErr) {}
+
+        serverStore.saveQuestion(item);
+        createdQs.push(item);
+      }
 
       return new Response(JSON.stringify({ ok: true, questions: createdQs }), {
         status: 200,
@@ -1460,17 +1821,22 @@ export async function contentRoute(request: Request): Promise<Response> {
       const id = path.slice("/api/questions/".length);
       const body = await request.json();
 
-      const updateData: any = {};
-      if (body.type !== undefined) updateData.type = body.type;
-      if (body.prompt !== undefined) updateData.prompt = body.prompt;
-      if (body.options !== undefined) updateData.options = body.options;
-      if (body.correctIndex !== undefined) updateData.correctIndex = body.correctIndex;
-      if (body.points !== undefined) updateData.points = body.points;
-      if (body.imageUrl !== undefined) updateData.imageUrl = body.imageUrl;
-      if (body.order !== undefined) updateData.order = body.order;
+      try {
+        const updateData: any = {};
+        if (body.type !== undefined) updateData.type = body.type;
+        if (body.prompt !== undefined) updateData.prompt = body.prompt;
+        if (body.options !== undefined) updateData.options = body.options;
+        if (body.correctIndex !== undefined) updateData.correct_index = body.correctIndex;
+        if (body.points !== undefined) updateData.points = body.points;
+        if (body.imageUrl !== undefined) updateData.image_url = body.imageUrl;
+        if (body.order !== undefined) updateData.order = body.order;
 
-      await db.update(questions).set(updateData).where(eq(questions.id, id));
-      const updated = await db.query.questions.findFirst({ where: eq(questions.id, id) });
+        await supabase.from("questions").update(updateData).eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getQuestions().find((q: any) => q.id === id);
+      const updated = serverStore.saveQuestion({ ...(existing || {}), ...body, id });
+
       return new Response(JSON.stringify({ question: updated }), {
         status: 200,
         headers: { "content-type": "application/json" },
@@ -1480,20 +1846,11 @@ export async function contentRoute(request: Request): Promise<Response> {
     // DELETE /api/questions/:id -> delete question
     if (request.method === "DELETE" && path.startsWith("/api/questions/")) {
       const id = path.slice("/api/questions/".length);
-      const qRow = await db.query.questions.findFirst({ where: eq(questions.id, id) });
+      try {
+        await supabase.from("questions").delete().eq("id", id);
+      } catch (sErr) {}
 
-      await db.delete(questions).where(eq(questions.id, id));
-
-      if (qRow) {
-        const countResult = await db
-          .select()
-          .from(questions)
-          .where(eq(questions.assessmentId, qRow.assessmentId));
-        await db
-          .update(assessments)
-          .set({ questionCount: countResult.length })
-          .where(eq(assessments.id, qRow.assessmentId));
-      }
+      serverStore.deleteQuestion(id);
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -1540,9 +1897,11 @@ export async function contentRoute(request: Request): Promise<Response> {
             assessmentId: s.assessment_id || s.assessmentId,
             studentId: s.student_id || s.studentId,
             attemptNumber: s.attempt_number || s.attemptNumber || 1,
-            score: s.score,
+            score: typeof s.score === "number" ? s.score : (parseInt(s.score, 10) || 0),
             status: s.status,
-            submittedAt: s.submitted_at ? s.submitted_at.slice(0, 10) : "",
+            submittedAt: s.submitted_at ? String(s.submitted_at).slice(0, 10) : "",
+            feedback: s.feedback || undefined,
+            proctorEvents: s.proctor_events || s.proctorEvents || undefined,
             responses: responsesMap.get(s.id) || [],
           }));
           serverStore.setSubmissions(mapped);
@@ -1566,35 +1925,58 @@ export async function contentRoute(request: Request): Promise<Response> {
       const body = await request.json();
       const id = body.id || makeId();
 
-      await db.insert(submissions).values({
+      const earnedScore = (body.responses || []).reduce((sum: number, r: any) => sum + (r.awarded || 0), 0);
+      const totalPossible = (body.responses || []).length * 10 || 100;
+      const computedPercentage = Math.round((earnedScore / totalPossible) * 100) || 100;
+
+      let created: any = {
         id,
         assessmentId: body.assessmentId,
         studentId: body.studentId,
-        submittedAt: body.submittedAt ? new Date(body.submittedAt) : new Date(),
-        status: body.status || "submitted",
+        score: computedPercentage,
+        submittedAt: body.submittedAt ? String(body.submittedAt).slice(0, 10) : new Date().toISOString().slice(0, 10),
+        status: body.status || "graded",
         feedback: body.feedback || null,
         proctorEvents: body.proctorEvents || null,
-      });
-
-      if (body.responses && Array.isArray(body.responses)) {
-        for (const resp of body.responses) {
-          await db.insert(submissionResponses).values({
-            id: makeId(),
-            submissionId: id,
-            questionId: resp.questionId,
-            response: resp.response,
-            awarded: resp.awarded,
-          });
-        }
-      }
-
-      const created = await db.query.submissions.findFirst({ where: eq(submissions.id, id) });
+        responses: (body.responses || []).map((r: any) => ({
+          questionId: r.questionId,
+          response: r.response,
+          awarded: r.awarded ?? 10,
+        })),
+      };
 
       try {
-        const student = await db.query.users.findFirst({ where: eq(users.id, body.studentId) });
-        const assessment = await db.query.assessments.findFirst({ where: eq(assessments.id, body.assessmentId) });
-        const course = assessment ? await db.query.courses.findFirst({ where: eq(courses.id, assessment.courseId) }) : null;
-        const teacher = course && course.teacherId ? await db.query.users.findFirst({ where: eq(users.id, course.teacherId) }) : null;
+        await supabase.from("submissions").insert({
+          id,
+          assessment_id: body.assessmentId,
+          student_id: body.studentId,
+          score: computedPercentage,
+          submitted_at: new Date().toISOString(),
+          status: body.status || "graded",
+          feedback: body.feedback || null,
+          proctor_events: body.proctorEvents || null,
+        });
+
+        if (body.responses && Array.isArray(body.responses)) {
+          for (const resp of body.responses) {
+            await supabase.from("submission_responses").insert({
+              id: makeId(),
+              submission_id: id,
+              question_id: resp.questionId,
+              response: resp.response,
+              awarded: resp.awarded,
+            });
+          }
+        }
+      } catch (sErr) {}
+
+      serverStore.saveSubmission(created);
+
+      try {
+        const student = serverStore.getUserById(body.studentId);
+        const assessment = serverStore.getAssessments().find((a: any) => a.id === body.assessmentId);
+        const course = assessment ? serverStore.getCourses().find((c: any) => c.id === assessment.courseId) : null;
+        const teacher = course && course.teacherId ? serverStore.getUserById(course.teacherId) : null;
 
         if (teacher && student && assessment && course) {
           sendNewSubmissionEmail(teacher.email, teacher.name, student.name, assessment.title, course.name).catch(console.error);
@@ -1602,104 +1984,45 @@ export async function contentRoute(request: Request): Promise<Response> {
           await insertMessage(db, student.id, teacher.id, "Quiz Submission: " + assessment.title, `Hello Instructor ${teacher.name},\n\nI have submitted my quiz for "${assessment.title}" in course "${course.name}".`);
         }
 
-        if (body.status === "graded" && student && assessment && course) {
-          const qsList = await db.select().from(questions).where(eq(questions.assessmentId, assessment.id));
-          const maxScore = qsList.reduce((sum: number, q: any) => sum + q.points, 0);
-          const earned = (body.responses || []).reduce((sum: number, r: any) => sum + (r.awarded || 0), 0);
-          sendSubmissionGradedEmail(student.email, student.name, assessment.title, earned, maxScore).catch(console.error);
-          await insertNotification(db, student.id, "Quiz Auto-graded", `${assessment.title}: ${Math.round((earned / (maxScore || 1)) * 100)}% (${earned}/${maxScore}).`, `/student/courses/${course.id}`);
+        if (student && assessment && course) {
+          sendSubmissionGradedEmail(student.email, student.name, assessment.title, earnedScore, totalPossible).catch(console.error);
+          await insertNotification(db, student.id, "Quiz Auto-graded", `${assessment.title}: ${computedPercentage}%.`, `/student/courses/${course.id}`);
           const senderId = course.teacherId || "ADM01";
-          await insertMessage(db, senderId, student.id, "Quiz Graded: " + assessment.title, `Hello ${student.name},\n\nYour quiz "${assessment.title}" has been automatically graded.\n\nScore: ${earned} / ${maxScore} points.`);
+          await insertMessage(db, senderId, student.id, "Quiz Graded: " + assessment.title, `Hello ${student.name},\n\nYour quiz "${assessment.title}" has been automatically graded.\n\nScore: ${computedPercentage}%.`);
         }
       } catch (err) {
         console.error("Error sending submission notifications:", err);
       }
 
-      const createdResponses = await db
-        .select()
-        .from(submissionResponses)
-        .where(eq(submissionResponses.submissionId, id));
-
       return new Response(
         JSON.stringify({
-          submission: {
-            ...created,
-            submittedAt: created?.submittedAt.toISOString().slice(0, 10),
-            responses: createdResponses.map((r: any) => ({
-              questionId: r.questionId,
-              response: r.response,
-              awarded: r.awarded,
-            })),
-          },
+          submission: created,
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
 
-    // PUT /api/submissions/:id/grade -> grade a submission (update awarded points per response)
+    // PUT /api/submissions/:id/grade -> grade a submission
     if (request.method === "PUT" && path.startsWith("/api/submissions/") && path.endsWith("/grade")) {
       const id = path.slice("/api/submissions/".length, -"/grade".length);
-      const body = await request.json(); // { awards: Record<string, number>, feedback?: string }
-
-      await db
-        .update(submissions)
-        .set({
-          status: "graded",
-          feedback: body.feedback || null,
-        })
-        .where(eq(submissions.id, id));
-
-      if (body.awards) {
-        for (const qId of Object.keys(body.awards)) {
-          const points = body.awards[qId];
-          await db
-            .update(submissionResponses)
-            .set({ awarded: points })
-            .where(
-              and(
-                eq(submissionResponses.submissionId, id),
-                eq(submissionResponses.questionId, qId)
-              )
-            );
-        }
-      }
-
-      const updated = await db.query.submissions.findFirst({ where: eq(submissions.id, id) });
-      const updatedResponses = await db
-        .select()
-        .from(submissionResponses)
-        .where(eq(submissionResponses.submissionId, id));
+      const body = await request.json();
 
       try {
-        if (updated) {
-          const student = await db.query.users.findFirst({ where: eq(users.id, updated.studentId) });
-          const assessment = await db.query.assessments.findFirst({ where: eq(assessments.id, updated.assessmentId) });
-          if (student && assessment) {
-            const qsList = await db.select().from(questions).where(eq(questions.assessmentId, assessment.id));
-            const maxScore = qsList.reduce((sum: number, q: any) => sum + q.points, 0);
-            const earned = updatedResponses.reduce((sum: number, r: any) => sum + (r.awarded || 0), 0);
-            sendSubmissionGradedEmail(student.email, student.name, assessment.title, earned, maxScore).catch(console.error);
-            await insertNotification(db, student.id, "Quiz Graded", `Your quiz "${assessment.title}" has been graded: ${earned}/${maxScore} (${Math.round((earned / (maxScore || 1)) * 100)}%).`, `/student/courses/${assessment.courseId}`);
-            const courseObj = await db.query.courses.findFirst({ where: eq(courses.id, assessment.courseId) });
-            const senderId = courseObj?.teacherId || "ADM01";
-            await insertMessage(db, senderId, student.id, "Quiz Graded: " + assessment.title, `Hello ${student.name},\n\nYour quiz "${assessment.title}" has been graded by the instructor.\n\nScore: ${earned} / ${maxScore} points.\nFeedback: ${updated.feedback || "None"}`);
-          }
-        }
-      } catch (err) {
-        console.error("Error sending graded notifications:", err);
-      }
+        await supabase
+          .from("submissions")
+          .update({
+            status: "graded",
+            feedback: body.feedback || null,
+          })
+          .eq("id", id);
+      } catch (sErr) {}
+
+      const existing = serverStore.getSubmissions().find((s: any) => s.id === id);
+      const updated = serverStore.saveSubmission({ ...(existing || {}), ...body, status: "graded", id });
 
       return new Response(
         JSON.stringify({
-          submission: {
-            ...updated,
-            submittedAt: updated?.submittedAt.toISOString().slice(0, 10),
-            responses: updatedResponses.map((r: any) => ({
-              questionId: r.questionId,
-              response: r.response,
-              awarded: r.awarded,
-            })),
-          },
+          submission: updated,
         }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
@@ -1711,7 +2034,10 @@ export async function contentRoute(request: Request): Promise<Response> {
 
     // GET /api/progress -> list all progress entries
     if (request.method === "GET" && path === "/api/progress") {
-      let progressRecord: Record<string, string[]> = {};
+      const studentId = url.searchParams.get("studentId");
+      const courseId = url.searchParams.get("courseId");
+
+      let progressRecord: Record<string, string[]> = serverStore.getProgressRecord();
 
       try {
         const { data: sProgress } = await supabase.from("progress").select("*");
@@ -1729,10 +2055,19 @@ export async function contentRoute(request: Request): Promise<Response> {
         }
       } catch (sErr) {}
 
-      return new Response(JSON.stringify({ progress: progressRecord }), {
-        status: 200,
-        headers: { "content-type": "application/json" },
-      });
+      let completedItemIds: string[] = [];
+      if (studentId && courseId) {
+        const key = `${studentId}:${courseId}`;
+        completedItemIds = progressRecord[key] || serverStore.getProgressFor(studentId, courseId);
+      }
+
+      return new Response(
+        JSON.stringify({
+          progress: progressRecord,
+          completedItemIds,
+        }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      );
     }
 
     // POST /api/progress -> mark progress complete
@@ -1740,26 +2075,40 @@ export async function contentRoute(request: Request): Promise<Response> {
       const body = await request.json(); // { studentId, courseId, contentItemId }
       const id = makeId();
 
-      // Check if it already exists
-      const existing = await db
-        .select()
-        .from(progress)
-        .where(
-          and(
-            eq(progress.studentId, body.studentId),
-            eq(progress.courseId, body.courseId),
-            eq(progress.contentItemId, body.contentItemId)
-          )
-        );
+      serverStore.saveProgress(body.studentId, body.courseId, body.contentItemId);
 
-      if (existing.length === 0) {
-        await db.insert(progress).values({
+      try {
+        await supabase.from("progress").insert({
           id,
-          studentId: body.studentId,
-          courseId: body.courseId,
-          contentItemId: body.contentItemId,
+          student_id: body.studentId,
+          course_id: body.courseId,
+          content_item_id: body.contentItemId,
         });
-      }
+      } catch (sErr) {}
+
+      try {
+        if (db) {
+          const existing = await db
+            .select()
+            .from(progress)
+            .where(
+              and(
+                eq(progress.studentId, body.studentId),
+                eq(progress.courseId, body.courseId),
+                eq(progress.contentItemId, body.contentItemId)
+              )
+            );
+
+          if (existing.length === 0) {
+            await db.insert(progress).values({
+              id,
+              studentId: body.studentId,
+              courseId: body.courseId,
+              contentItemId: body.contentItemId,
+            });
+          }
+        }
+      } catch (dbErr) {}
 
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -1774,15 +2123,30 @@ export async function contentRoute(request: Request): Promise<Response> {
       const contentItemId = url.searchParams.get("contentItemId");
 
       if (studentId && courseId && contentItemId) {
-        await db
-          .delete(progress)
-          .where(
-            and(
-              eq(progress.studentId, studentId),
-              eq(progress.courseId, courseId),
-              eq(progress.contentItemId, contentItemId)
-            )
-          );
+        serverStore.removeProgress(studentId, courseId, contentItemId);
+
+        try {
+          await supabase
+            .from("progress")
+            .delete()
+            .eq("student_id", studentId)
+            .eq("course_id", courseId)
+            .eq("content_item_id", contentItemId);
+        } catch (sErr) {}
+
+        try {
+          if (db) {
+            await db
+              .delete(progress)
+              .where(
+                and(
+                  eq(progress.studentId, studentId),
+                  eq(progress.courseId, courseId),
+                  eq(progress.contentItemId, contentItemId)
+                )
+              );
+          }
+        } catch (dbErr) {}
       }
 
       return new Response(JSON.stringify({ ok: true }), {
@@ -2721,7 +3085,7 @@ export async function contentRoute(request: Request): Promise<Response> {
     });
   } catch (err) {
     console.error("Content route error:", err);
-    return new Response(JSON.stringify({ error: "Internal server error" }), {
+    return new Response(JSON.stringify({ error: "Internal server error", details: (err as any)?.message, stack: (err as any)?.stack }), {
       status: 500,
       headers: { "content-type": "application/json" },
     });

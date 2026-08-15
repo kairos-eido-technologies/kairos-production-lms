@@ -112,30 +112,23 @@ function CourseCard({ course, index }: { course: any; index: number }) {
   const [showSyllabus, setShowSyllabus] = useState(false);
   const accent = ACCENTS[index % ACCENTS.length]!;
 
-  const isAws = course.code === "AWS-CP-101" || course.name?.toLowerCase().includes("aws");
-  const isC = course.code === "C-1" || course.name?.toLowerCase().includes("c programming");
-  const isJava = course.code === "JPC" || course.name?.toLowerCase().includes("java");
-
-  const description = course.description || (
-    isAws ? "Master Cloud Computing essentials, AWS VPC, EC2, IAM, S3, Lambda, CloudWatch & CloudTrail with hands-on architecture labs." :
-    isC ? "Foundational programming concepts covering C syntax, control structures, functions, pointers, arrays & file handling." :
-    isJava ? "Object-Oriented Programming (OOP) principles, Java syntax, error handling, arrays & real-world file manipulation." :
-    "Comprehensive hands-on curriculum with practical projects and expert mentorship."
-  );
-
-  const badgeTag = course.badgeTag || course.badge_tag || (
-    isAws ? "AWS CERTIFIED" : isC ? "CORE C" : isJava ? "JAVA OOP" : "COURSE"
-  );
-  const featuredBadgeText = course.featuredBadgeText || course.featured_badge_text || (isAws ? "🔥 POPULAR" : undefined);
-  const durationText = course.durationText || course.duration_text || "8 Weeks · Hands-on";
-  const projectsText = course.projectsText || course.projects_text || (isAws ? "Cloud Labs & Demos" : "Practical Code Labs");
-  const videoUrl = course.previewVideoUrl || course.preview_video_url;
+  const description = (course.description || "").trim();
+  const badgeTag = (course.badgeTag || course.badge_tag || "").trim();
+  const featuredBadgeText = (course.featuredBadgeText ?? course.featured_badge_text ?? "").trim();
+  const durationText = (course.durationText || course.duration_text || "").trim();
+  const projectsText = (course.projectsText || course.projects_text || "").trim();
+  const videoUrl = (course.previewVideoUrl || course.preview_video_url || "").trim();
   const embedUrl = videoUrl ? getEmbedUrl(videoUrl) : null;
-  const techStack = Array.isArray(course.techStack) && course.techStack.length > 0
-    ? course.techStack.map((t: any) => (typeof t === "string" ? t : t?.name || ""))
+
+  const rawTech = Array.isArray(course.techStack) && course.techStack.length > 0
+    ? course.techStack
     : Array.isArray(course.tech_stack) && course.tech_stack.length > 0
     ? course.tech_stack
-    : (isAws ? ["AWS", "VPC", "EC2", "IAM", "S3", "Lambda"] : isC ? ["C Syntax", "Pointers", "Arrays", "File I/O"] : isJava ? ["Java", "OOP", "Classes", "Exceptions"] : ["Interactive", "Certified"]);
+    : [];
+
+  const techStack = rawTech
+    .map((t: any) => (typeof t === "string" ? t : t?.name || ""))
+    .filter(Boolean);
 
   const sections = Array.isArray(course.sections) ? course.sections : [];
 
@@ -179,20 +172,24 @@ function CourseCard({ course, index }: { course: any; index: number }) {
         )}
 
         <div>
-          <div className="relative flex items-center justify-between gap-3">
-            <span className="data-chip font-bold" style={{ color: accent, borderColor: `${accent}55` }}>
-              {badgeTag}
-            </span>
-            {featuredBadgeText && (
-              <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                <span
-                  className="inline-block h-1.5 w-1.5 rounded-full"
-                  style={{ background: accent, boxShadow: `0 0 8px ${accent}`, animation: reduced ? undefined : "pulse 1.8s infinite" }}
-                />
-                {featuredBadgeText}
-              </span>
-            )}
-          </div>
+          {(badgeTag || featuredBadgeText) && (
+            <div className="relative flex items-center justify-between gap-3">
+              {badgeTag ? (
+                <span className="data-chip font-bold" style={{ color: accent, borderColor: `${accent}55` }}>
+                  {badgeTag}
+                </span>
+              ) : <span />}
+              {featuredBadgeText && (
+                <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                  <span
+                    className="inline-block h-1.5 w-1.5 rounded-full"
+                    style={{ background: accent, boxShadow: `0 0 8px ${accent}`, animation: reduced ? undefined : "pulse 1.8s infinite" }}
+                  />
+                  {featuredBadgeText}
+                </span>
+              )}
+            </div>
+          )}
 
           <h3 className="relative mt-4 text-lg font-bold tracking-tight text-foreground">{course.name}</h3>
           {description && (
@@ -220,33 +217,37 @@ function CourseCard({ course, index }: { course: any; index: number }) {
             </div>
           )}
 
-          <div className="relative mt-4 flex flex-wrap gap-1.5">
-            {techStack.map((tech: string, ti: number) => (
-              <span
-                key={tech}
-                className="data-chip transition-[color,border-color,box-shadow] duration-300"
-                style={
-                  hover && !reduced
-                    ? {
-                        color: accent,
-                        borderColor: `${accent}66`,
-                        boxShadow: `0 0 10px -2px ${accent}`,
-                        transitionDelay: `${ti * 70}ms`,
-                      }
-                    : undefined
-                }
-              >
-                {tech}
-              </span>
-            ))}
-          </div>
+          {techStack.length > 0 && (
+            <div className="relative mt-4 flex flex-wrap gap-1.5">
+              {techStack.map((tech: string, ti: number) => (
+                <span
+                  key={tech}
+                  className="data-chip transition-[color,border-color,box-shadow] duration-300"
+                  style={
+                    hover && !reduced
+                      ? {
+                          color: accent,
+                          borderColor: `${accent}66`,
+                          boxShadow: `0 0 10px -2px ${accent}`,
+                          transitionDelay: `${ti * 70}ms`,
+                        }
+                      : undefined
+                  }
+                >
+                  {tech}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="mt-5 pt-4 border-t border-border/80">
-          <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-            <span>{durationText}</span>
-            <span>{projectsText}</span>
-          </div>
+          {(durationText || projectsText) && (
+            <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-3">
+              <span>{durationText}</span>
+              <span>{projectsText}</span>
+            </div>
+          )}
 
           <button
             onClick={() => setShowSyllabus((v) => !v)}

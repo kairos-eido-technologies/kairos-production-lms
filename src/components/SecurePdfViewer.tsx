@@ -7,6 +7,7 @@ interface SecurePdfViewerProps {
   url: string;
   title: string;
   isPresentation?: boolean;
+  onComplete?: () => void;
 }
 
 declare global {
@@ -15,7 +16,7 @@ declare global {
   }
 }
 
-export function SecurePdfViewer({ url, title, isPresentation = false }: SecurePdfViewerProps) {
+export function SecurePdfViewer({ url, title, isPresentation = false, onComplete }: SecurePdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -24,14 +25,33 @@ export function SecurePdfViewer({ url, title, isPresentation = false }: SecurePd
   const [numPages, setNumPages] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [useIframeFallback, setUseIframeFallback] = useState<boolean>(false);
-  const [zoom, setZoom] = useState<number>(isPresentation ? 1.0 : 0.75);
+  const [zoom, setZoom] = useState<number>(1.0);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0, scrollLeft: 0, scrollTop: 0 });
   const [fitDimensions, setFitDimensions] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
 
-  // Load PDF.js script dynamically
+  // Auto-trigger completion when student reaches the last page or dwells on a 1-page PDF
+  useEffect(() => {
+    if (!loading && numPages > 0) {
+      if (pageNum >= numPages) {
+        onComplete?.();
+      } else if (numPages === 1) {
+        const timer = setTimeout(() => {
+          onComplete?.();
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [pageNum, numPages, loading, onComplete]);
+
+  // Reset page number, zoom, and load PDF.js script dynamically whenever url changes
   useEffect(() => {
     let isMounted = true;
+    setPageNum(1);
+    setZoom(1.0);
+    setLoading(true);
+    setPdfDoc(null);
+    setUseIframeFallback(false);
 
     const loadPdfJs = async () => {
       try {
@@ -50,7 +70,20 @@ export function SecurePdfViewer({ url, title, isPresentation = false }: SecurePd
             "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
         }
 
-        const loadingTask = window.pdfjsLib.getDocument(url);
+        let loadingTask;
+        if (url.startsWith("data:")) {
+          const comma = url.indexOf(",");
+          const b64 = url.slice(comma + 1);
+          const binaryStr = atob(b64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+          loadingTask = window.pdfjsLib.getDocument({ data: bytes });
+        } else {
+          loadingTask = window.pdfjsLib.getDocument(url);
+        }
+
         const doc = await loadingTask.promise;
 
         if (isMounted) {
@@ -198,10 +231,10 @@ export function SecurePdfViewer({ url, title, isPresentation = false }: SecurePd
   };
 
   const handleResetZoom = () => {
-    setZoom(isPresentation ? 1.0 : 0.75);
+    setZoom(1.0);
   };
 
-  const defaultZoom = isPresentation ? 1.0 : 0.75;
+  const defaultZoom = 1.0;
 
   return (
     <div

@@ -290,14 +290,29 @@ export interface PptxSlideRendererProps {
   /** data: URL (base64) or server-relative/absolute URL to a .pptx file */
   src: string;
   title: string;
+  onComplete?: () => void;
 }
 
-export function PptxSlideRenderer({ src, title }: PptxSlideRendererProps) {
+export function PptxSlideRenderer({ src, title, onComplete }: PptxSlideRendererProps) {
   const [slides, setSlides] = useState<ParsedSlide[]>([]);
   const [current, setCurrent] = useState(1);
   const [status, setStatus] = useState<"loading" | "error" | "done">("loading");
   const [errorMsg, setErrorMsg] = useState("");
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // Auto-trigger completion on last slide or 1-slide dwell
+  useEffect(() => {
+    if (status === "done" && slides.length > 0) {
+      if (current >= slides.length) {
+        onComplete?.();
+      } else if (slides.length === 1) {
+        const timer = setTimeout(() => {
+          onComplete?.();
+        }, 4000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [current, slides.length, status, onComplete]);
 
   // Parse on mount / src change
   useEffect(() => {

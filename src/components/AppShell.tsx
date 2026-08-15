@@ -136,13 +136,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     };
   }, [user]);
 
-  // Refresh data on route transitions/navigation
-  useEffect(() => {
-    if (user) {
-      refreshData();
-    }
-  }, [pathname, user]);
-
   const myNotifs = useMemo(
     () => notifications.filter((n) => user && n.userId === user.id),
     [notifications, user],
@@ -340,20 +333,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
 
       {/* ── Main Workspace Area ─────────────────────────────────────────────────── */}
-      <div className="relative z-10 flex-1 flex flex-col min-w-0">
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={pathname}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.18, ease: "easeOut" }}
-            className="flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto"
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
-      </div>
+      <main className="relative z-10 flex-1 p-4 sm:p-6 lg:p-8 max-w-7xl w-full mx-auto flex flex-col min-w-0">
+        {children}
+      </main>
     </div>
   );
 }

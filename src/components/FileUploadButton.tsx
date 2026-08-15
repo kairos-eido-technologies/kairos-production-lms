@@ -47,7 +47,7 @@ export function FileUploadButton({
         try {
           const fd = new FormData();
           fd.append("file", file);
-          const res = await fetch("/api/files", { method: "POST", body: fd });
+          const res = await fetch("/api/files", { method: "POST", body: fd, credentials: "same-origin" });
           if (res.ok) {
             const json = await res.json();
             if (json.url) fileUrl = json.url as string;

@@ -150,17 +150,23 @@ function CourseManagement() {
   const openEdit = (c: Course) => {
     setEditing(c);
     setDraft({
-      name: c.name, code: c.code, description: c.description, thumbnail: c.thumbnail,
-      teacherId: c.teacherId, status: c.status,
-      studentIds: [...c.studentIds],
+      name: c.name || "",
+      code: c.code || "",
+      description: c.description || "",
+      thumbnail: c.thumbnail || "📘",
+      teacherId: c.teacherId || teachers[0]?.id || "",
+      status: c.status || "active",
+      studentIds: [...(c.studentIds || [])],
       studentAccess: { ...(c.studentAccess ?? {}) },
-      showInPreview: c.showInPreview ?? false,
+      showInPreview: c.showInPreview ?? true,
       previewVideoUrl: c.previewVideoUrl ?? "",
       badgeTag: c.badgeTag ?? "",
       featuredBadgeText: c.featuredBadgeText ?? "",
       durationText: c.durationText ?? "",
       projectsText: c.projectsText ?? "",
-      techStack: c.techStack ? [...c.techStack] : [],
+      techStack: Array.isArray(c.techStack)
+        ? c.techStack.map((t: any) => typeof t === "string" ? { name: t, icon: "⚡" } : { name: t?.name || "", icon: t?.icon || "⚡" }).filter((t) => t.name)
+        : [],
     });
     setDialogOpen(true);
   };

@@ -205,12 +205,96 @@ class ServerStore {
   // General store getter / setters
   setCertificates(list: any[]) { this.certificatesList = list; }
   getCertificates() { return this.certificatesList; }
+  saveCertificate(cert: any) {
+    const idx = this.certificatesList.findIndex((c) => c.id === cert.id);
+    if (idx >= 0) {
+      this.certificatesList[idx] = { ...this.certificatesList[idx], ...cert };
+    } else {
+      this.certificatesList.unshift(cert);
+    }
+    return cert;
+  }
 
   setAssessments(list: any[]) { this.assessmentsList = list; }
   getAssessments() { return this.assessmentsList; }
+  saveAssessment(assessment: any) {
+    const idx = this.assessmentsList.findIndex((a) => a.id === assessment.id);
+    if (idx >= 0) {
+      this.assessmentsList[idx] = { ...this.assessmentsList[idx], ...assessment };
+    } else {
+      this.assessmentsList.push(assessment);
+    }
+    return assessment;
+  }
+  deleteAssessment(id: string) {
+    this.assessmentsList = this.assessmentsList.filter((a) => a.id !== id);
+    this.questionsList = this.questionsList.filter((q) => q.assessmentId !== id);
+  }
+
+  setQuestions(list: any[]) { this.questionsList = list; }
+  getQuestions() { return this.questionsList; }
+  saveQuestion(question: any) {
+    const idx = this.questionsList.findIndex((q) => q.id === question.id);
+    if (idx >= 0) {
+      this.questionsList[idx] = { ...this.questionsList[idx], ...question };
+    } else {
+      this.questionsList.push(question);
+    }
+    // update assessment questionCount
+    const ass = this.assessmentsList.find((a) => a.id === question.assessmentId);
+    if (ass) {
+      ass.questionCount = this.questionsList.filter((q) => q.assessmentId === question.assessmentId).length;
+    }
+    return question;
+  }
+  deleteQuestion(id: string) {
+    const q = this.questionsList.find((item) => item.id === id);
+    this.questionsList = this.questionsList.filter((item) => item.id !== id);
+    if (q) {
+      const ass = this.assessmentsList.find((a) => a.id === q.assessmentId);
+      if (ass) {
+        ass.questionCount = this.questionsList.filter((item) => item.assessmentId === q.assessmentId).length;
+      }
+    }
+  }
 
   setSubmissions(list: any[]) { this.submissionsList = list; }
   getSubmissions() { return this.submissionsList; }
+  saveSubmission(sub: any) {
+    const idx = this.submissionsList.findIndex((s) => s.id === sub.id);
+    if (idx >= 0) {
+      this.submissionsList[idx] = { ...this.submissionsList[idx], ...sub };
+    } else {
+      this.submissionsList.unshift(sub);
+    }
+    return sub;
+  }
+
+  // Progress
+  saveProgress(studentId: string, courseId: string, contentItemId: string) {
+    const key = `${studentId}:${courseId}`;
+    const list = this.progressMap.get(key) || [];
+    if (!list.includes(contentItemId)) {
+      list.push(contentItemId);
+      this.progressMap.set(key, list);
+    }
+  }
+  removeProgress(studentId: string, courseId: string, contentItemId: string) {
+    const key = `${studentId}:${courseId}`;
+    const list = this.progressMap.get(key) || [];
+    this.progressMap.set(key, list.filter((id) => id !== contentItemId));
+  }
+  getProgressRecord(): Record<string, string[]> {
+    const record: Record<string, string[]> = {};
+    for (const [k, v] of this.progressMap.entries()) {
+      record[k] = [...v];
+    }
+    return record;
+  }
+  getProgressFor(studentId: string, courseId: string): string[] {
+    const key = `${studentId}:${courseId}`;
+    return this.progressMap.get(key) || [];
+  }
 
   setEvents(list: any[]) { this.eventsList = list; }
   getEvents() { return this.eventsList; }
@@ -294,7 +378,19 @@ class ServerStore {
 // Global singleton across hot-reloads
 const globalRef = globalThis as unknown as { __serverStore?: ServerStore };
 
-export const serverStore = globalRef.__serverStore || new ServerStore();
-if (process.env.NODE_ENV !== "production") {
-  globalRef.__serverStore = serverStore;
+const existingStore = globalRef.__serverStore;
+export const serverStore = new ServerStore();
+if (existingStore) {
+  // Preserve in-memory caches across hot reloads while keeping latest class methods
+  (serverStore as any).usersMap = (existingStore as any).usersMap || (serverStore as any).usersMap;
+  (serverStore as any).coursesList = (existingStore as any).coursesList || [];
+  (serverStore as any).certificatesList = (existingStore as any).certificatesList || [];
+  (serverStore as any).assessmentsList = (existingStore as any).assessmentsList || [];
+  (serverStore as any).questionsList = (existingStore as any).questionsList || [];
+  (serverStore as any).submissionsList = (existingStore as any).submissionsList || [];
+  (serverStore as any).progressMap = (existingStore as any).progressMap || (serverStore as any).progressMap;
+  (serverStore as any).messagesList = (existingStore as any).messagesList || [];
+  (serverStore as any).notificationsList = (existingStore as any).notificationsList || [];
+  (serverStore as any).extraAttemptsMap = (existingStore as any).extraAttemptsMap || {};
 }
+globalRef.__serverStore = serverStore;

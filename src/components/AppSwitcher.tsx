@@ -92,6 +92,7 @@ export function AppSwitcher({ items, unreadMsgs = 0 }: AppSwitcherProps) {
               <Link
                 key={it.to}
                 to={it.to}
+                preload="intent"
                 onClick={() => setOpen(false)}
                 className={`group relative flex flex-col items-center justify-center rounded-xl p-3 text-center transition-all duration-200 border ${
                   active

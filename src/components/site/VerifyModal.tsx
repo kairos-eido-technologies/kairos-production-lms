@@ -115,7 +115,7 @@ export function VerifyModal({ open, onClose }: { open: boolean; onClose: () => v
             </div>
 
             <div className="mt-5 flex items-center gap-3">
-              <MagneticButton onClick={submit} strength={0.14}>
+              <MagneticButton onClick={submit}>
                 {status === "verifying" ? "VERIFYING..." : "Verify"}
               </MagneticButton>
               <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-muted-foreground">

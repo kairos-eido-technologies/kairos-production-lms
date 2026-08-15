@@ -199,7 +199,6 @@ function AdminCertificates() {
               </div>
               <div className="text-foreground text-xs grid grid-cols-2 gap-2 pt-1">
                 <div><strong>Course:</strong> {courseName(verifyResult.cert.courseId)}</div>
-                <div><strong>Score:</strong> {verifyResult.cert.score}%</div>
                 <div><strong>Issued Date:</strong> {verifyResult.cert.issuedAt ?? "N/A"}</div>
               </div>
               <div className="flex gap-2 pt-2 border-t border-border/40">

@@ -82,26 +82,19 @@ export function AppLaunchpad({ items }: AppLaunchpadProps) {
           </div>
         ) : (
           <div className="flex flex-wrap items-center justify-center gap-y-12 gap-x-10 sm:gap-x-14 sm:gap-y-14 max-w-4xl px-2">
-            {appModules.map((it, idx) => {
+            {appModules.map((it) => {
               const Icon = it.icon;
               const accent = APP_TILE_ACCENTS[it.label] ?? DEFAULT_ACCENT;
               const isMessagesApp = it.label === "Messages";
 
               return (
-                <motion.div
+                <div
                   key={it.to}
-                  initial={{ opacity: 0, scale: 0.9, y: 12 }}
-                  animate={{ opacity: 1, scale: 1, y: 0 }}
-                  transition={{
-                    delay: idx * 0.04,
-                    type: "spring",
-                    stiffness: 280,
-                    damping: 22,
-                  }}
                   className="flex flex-col items-center px-1 py-1"
                 >
                   <Link
                     to={it.to}
+                    preload="intent"
                     className="group flex flex-col items-center text-center cursor-pointer select-none"
                   >
                     {/* Dark Glass Neon Icon Tile */}
@@ -121,7 +114,7 @@ export function AppLaunchpad({ items }: AppLaunchpadProps) {
                       {it.label}
                     </span>
                   </Link>
-                </motion.div>
+                </div>
               );
             })}
           </div>

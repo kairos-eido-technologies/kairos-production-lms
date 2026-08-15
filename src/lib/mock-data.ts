@@ -13,7 +13,7 @@ export interface User {
   avatar?: string;
   status: "active" | "inactive";
   joinedAt: string;
-  lastActive?: string;
+  lastActive?: string | null;
   courseIds?: string[];
   group?: string;
   isEmailVerified?: boolean;

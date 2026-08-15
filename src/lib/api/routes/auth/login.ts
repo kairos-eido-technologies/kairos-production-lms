@@ -164,7 +164,7 @@ export async function loginRoute(request: Request): Promise<Response> {
   } catch (error) {
     console.error("Login error:", error);
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: "Internal server error", details: (error as any)?.message, stack: (error as any)?.stack }),
       { status: 500, headers: { "content-type": "application/json" } }
     );
   }

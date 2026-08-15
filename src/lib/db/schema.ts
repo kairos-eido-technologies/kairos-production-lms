@@ -51,7 +51,6 @@ export const sections = pgTable("sections", {
   title: text("title").notNull(),
   order: integer("order").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 // Content items (readings, videos, labs, etc.)

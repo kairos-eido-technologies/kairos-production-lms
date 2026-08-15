@@ -1,7 +1,10 @@
-import bcrypt from "bcryptjs";
+import bcryptPkg from "bcryptjs";
 // @ts-ignore
-import jwt from "jsonwebtoken";
+import jwtPkg from "jsonwebtoken";
 import "dotenv/config";
+
+const bcrypt = (bcryptPkg as any).default || bcryptPkg;
+const jwt = (jwtPkg as any).default || jwtPkg;
 
 const JWT_SECRET = process.env.JWT_SECRET || "kairos-lms-dev-jwt-secret-key-2026";
 if (!process.env.JWT_SECRET && process.env.NODE_ENV === "production") {
