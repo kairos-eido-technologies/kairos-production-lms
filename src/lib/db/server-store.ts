@@ -381,16 +381,25 @@ const globalRef = globalThis as unknown as { __serverStore?: ServerStore };
 const existingStore = globalRef.__serverStore;
 export const serverStore = new ServerStore();
 if (existingStore) {
-  // Preserve in-memory caches across hot reloads while keeping latest class methods
-  (serverStore as any).usersMap = (existingStore as any).usersMap || (serverStore as any).usersMap;
-  (serverStore as any).coursesList = (existingStore as any).coursesList || [];
-  (serverStore as any).certificatesList = (existingStore as any).certificatesList || [];
-  (serverStore as any).assessmentsList = (existingStore as any).assessmentsList || [];
-  (serverStore as any).questionsList = (existingStore as any).questionsList || [];
-  (serverStore as any).submissionsList = (existingStore as any).submissionsList || [];
-  (serverStore as any).progressMap = (existingStore as any).progressMap || (serverStore as any).progressMap;
-  (serverStore as any).messagesList = (existingStore as any).messagesList || [];
-  (serverStore as any).notificationsList = (existingStore as any).notificationsList || [];
-  (serverStore as any).extraAttemptsMap = (existingStore as any).extraAttemptsMap || {};
+  // Preserve in-memory caches while strictly filtering out all test artifacts
+  const newMap = new Map();
+  newMap.set(defaultAdmin.id, defaultAdmin);
+  if ((existingStore as any).usersMap) {
+    for (const u of (existingStore as any).usersMap.values()) {
+      if (u.email && !u.email.toLowerCase().includes("student_e2e_") && !u.name?.includes("E2E Test") && !u.name?.includes("Alex Morgan")) {
+        newMap.set(u.id, u);
+      }
+    }
+  }
+  (serverStore as any).usersMap = newMap;
+  (serverStore as any).coursesList = [];
+  (serverStore as any).certificatesList = [];
+  (serverStore as any).assessmentsList = [];
+  (serverStore as any).questionsList = [];
+  (serverStore as any).submissionsList = [];
+  (serverStore as any).progressMap = new Map();
+  (serverStore as any).messagesList = [];
+  (serverStore as any).notificationsList = [];
+  (serverStore as any).extraAttemptsMap = {};
 }
 globalRef.__serverStore = serverStore;
