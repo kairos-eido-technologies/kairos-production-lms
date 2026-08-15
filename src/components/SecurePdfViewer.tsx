@@ -191,7 +191,6 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
   // Panning & dragging for document pages & zoomed views
   const handleMouseDown = (e: React.MouseEvent) => {
     if (!containerRef.current) return;
-    if (isPresentation && zoom <= 1) return;
     setIsDragging(true);
     setDragStart({
       x: e.clientX,
@@ -203,7 +202,6 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!isDragging || !containerRef.current) return;
-    e.preventDefault();
     const dx = e.clientX - dragStart.x;
     const dy = e.clientY - dragStart.y;
     containerRef.current.scrollLeft = dragStart.scrollLeft - dx;
@@ -214,13 +212,30 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
     setIsDragging(false);
   };
 
-  const handlePrevPage = () => {
-    if (pageNum > 1) setPageNum(pageNum - 1);
-  };
+  const handlePrevPage = useCallback(() => {
+    setPageNum((prev) => Math.max(1, prev - 1));
+  }, []);
 
-  const handleNextPage = () => {
-    if (pageNum < numPages) setPageNum(pageNum + 1);
-  };
+  const handleNextPage = useCallback(() => {
+    setPageNum((prev) => (numPages > 0 ? Math.min(numPages, prev + 1) : prev + 1));
+  }, [numPages]);
+
+  // Keyboard navigation (Arrow keys & Page keys)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept when user is typing in an input
+      if (["INPUT", "TEXTAREA"].includes((e.target as HTMLElement)?.tagName)) return;
+      if (e.key === "ArrowLeft" || e.key === "PageUp") {
+        e.preventDefault();
+        handlePrevPage();
+      } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") {
+        e.preventDefault();
+        handleNextPage();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [handlePrevPage, handleNextPage]);
 
   const handleZoomIn = () => {
     setZoom((prev) => Math.min(Number((prev + 0.25).toFixed(2)), 3.0));
@@ -271,7 +286,7 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
               onClick={handlePrevPage}
               disabled={pageNum <= 1 || !pdfDoc}
               className="h-8 w-8 rounded-lg border-border cursor-pointer"
-              title={isPresentation ? "Previous Slide" : "Previous Page"}
+              title={isPresentation ? "Previous Slide (Left Arrow / Click Left)" : "Previous Page (Left Arrow / Click Left)"}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -288,7 +303,7 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
               onClick={handleNextPage}
               disabled={pageNum >= numPages || !pdfDoc}
               className="h-8 w-8 rounded-lg border-border cursor-pointer"
-              title={isPresentation ? "Next Slide" : "Next Page"}
+              title={isPresentation ? "Next Slide (Right Arrow / Click Right)" : "Next Page (Right Arrow / Click Right)"}
             >
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -335,8 +350,34 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
         </div>
       </div>
 
-      {/* Outer Viewport Box - Clean transparent container without dark back layer sides */}
-      <div className={`w-full ${isPresentation ? "h-[640px]" : "h-[750px]"} rounded-xl bg-transparent border-0 overflow-hidden relative`}>
+      {/* Outer Viewport Box */}
+      <div className={`w-full ${isPresentation ? "h-[640px]" : "h-[750px]"} rounded-xl bg-transparent border-0 overflow-hidden relative group/viewer`}>
+        {/* Left-side click zone overlay */}
+        {!loading && numPages > 1 && pageNum > 1 && (
+          <div
+            onClick={handlePrevPage}
+            className="absolute left-0 top-0 bottom-0 w-24 sm:w-32 z-20 flex items-center justify-start pl-4 cursor-pointer group/prev transition-colors hover:bg-black/5"
+            title="Previous Page (Click Left)"
+          >
+            <div className="h-10 w-10 rounded-full bg-black/60 text-white flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md opacity-0 group-hover/prev:opacity-100 group-hover/viewer:opacity-40 hover:!opacity-100 transition-all transform -translate-x-2 group-hover/prev:translate-x-0">
+              <ChevronLeft className="h-6 w-6" />
+            </div>
+          </div>
+        )}
+
+        {/* Right-side click zone overlay */}
+        {!loading && numPages > 1 && pageNum < numPages && (
+          <div
+            onClick={handleNextPage}
+            className="absolute right-0 top-0 bottom-0 w-24 sm:w-32 z-20 flex items-center justify-end pr-4 cursor-pointer group/next transition-colors hover:bg-black/5"
+            title="Next Page (Click Right)"
+          >
+            <div className="h-10 w-10 rounded-full bg-black/60 text-white flex items-center justify-center shadow-lg border border-white/20 backdrop-blur-md opacity-0 group-hover/next:opacity-100 group-hover/viewer:opacity-40 hover:!opacity-100 transition-all transform translate-x-2 group-hover/next:translate-x-0">
+              <ChevronRight className="h-6 w-6" />
+            </div>
+          </div>
+        )}
+
         {/* Viewport Window */}
         <div
           ref={containerRef}
@@ -358,7 +399,17 @@ export function SecurePdfViewer({ url, title, isPresentation = false, onComplete
 
           {!loading && !useIframeFallback && (
             <div
-              className="relative rounded-xl border border-border shadow-xl shrink-0 transition-all duration-150 ease-out m-auto flex items-center justify-center bg-white overflow-hidden"
+              onClick={(e) => {
+                // Click on left half -> prev page, click on right half -> next page
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                if (clickX < rect.width / 2) {
+                  handlePrevPage();
+                } else {
+                  handleNextPage();
+                }
+              }}
+              className="relative rounded-xl border border-border shadow-xl shrink-0 transition-all duration-150 ease-out m-auto flex items-center justify-center bg-white overflow-hidden cursor-pointer"
               style={{
                 width: fitDimensions.width ? `${Math.floor(fitDimensions.width * zoom)}px` : "100%",
                 height: fitDimensions.height ? `${Math.floor(fitDimensions.height * zoom)}px` : "auto",

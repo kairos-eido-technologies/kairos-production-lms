@@ -37,14 +37,41 @@ function AdminCertificates() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStudentId, setGenStudentId] = useState("");
   const [genCourseId, setGenCourseId] = useState("");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [courseSearch, setCourseSearch] = useState("");
   const [genScore, setGenScore] = useState<number>(100);
   const [genNote, setGenNote] = useState("");
+
+  // Preview & Print Modal State
+  const [previewCert, setPreviewCert] = useState<Certificate | null>(null);
 
   const userName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
   const userEmail = (id: string) => users.find((u) => u.id === id)?.email ?? "—";
   const courseName = (id: string) => courses.find((c) => c.id === id)?.name ?? "—";
 
   const students = useMemo(() => users.filter((u) => u.role === "student"), [users]);
+
+  const filteredStudents = useMemo(() => {
+    const q = studentSearch.trim().toLowerCase();
+    if (!q) return students;
+    return students.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.email.toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q)
+    );
+  }, [students, studentSearch]);
+
+  const filteredCourses = useMemo(() => {
+    const q = courseSearch.trim().toLowerCase();
+    if (!q) return courses;
+    return courses.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        (c.code && c.code.toLowerCase().includes(q)) ||
+        c.id.toLowerCase().includes(q)
+    );
+  }, [courses, courseSearch]);
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -113,16 +140,34 @@ function AdminCertificates() {
       toast.error("Please select both a student and a course.");
       return;
     }
+    const today = new Date().toISOString().slice(0, 10);
     const createdId = issueCertificateDirectly(genStudentId, genCourseId, genScore, genNote.trim());
-    toast.success(`Certificate issued! Unique ID: ${createdId}`);
+    
+    const newCert: Certificate = {
+      id: createdId,
+      studentId: genStudentId,
+      courseId: genCourseId,
+      score: genScore,
+      status: "approved",
+      requestedAt: today,
+      issuedAt: today,
+      teacherNote: genNote.trim() || "Issued by Administrator",
+    };
+
+    toast.success(`Certificate issued successfully! Unique ID: ${createdId}`);
     setVerifyId(createdId);
     setIsGenerating(false);
     setGenStudentId("");
     setGenCourseId("");
+    setStudentSearch("");
+    setCourseSearch("");
     setGenScore(100);
     setGenNote("");
     setTab("approved");
     setPage(1);
+
+    // Prompt immediate visual certificate preview with print button
+    setPreviewCert(newCert);
   };
 
   const exportAllCsv = () => {
@@ -294,9 +339,14 @@ function AdminCertificates() {
                       </Button>
 
                       {c.status === "approved" && (
-                        <Button size="sm" variant="outline" onClick={() => handlePrint(c)}>
-                          <Printer className="h-4 w-4 mr-1" /> Print
-                        </Button>
+                        <div className="flex items-center gap-1.5">
+                          <Button size="sm" variant="outline" onClick={() => setPreviewCert(c)}>
+                            <Eye className="h-4 w-4 mr-1 text-primary" /> View
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handlePrint(c)}>
+                            <Printer className="h-4 w-4 mr-1 text-primary" /> Print
+                          </Button>
+                        </div>
                       )}
 
                       {c.status === "pending" && (
@@ -359,49 +409,125 @@ function AdminCertificates() {
         </TabsContent>
       </Tabs>
 
-      {/* Generate Unlimited Certificates Dialog */}
+      {/* Generate Unlimited Certificates Dialog with Search */}
       <Dialog open={isGenerating} onOpenChange={setIsGenerating}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Award className="h-5 w-5 text-primary" /> Generate Unlimited Certificate
             </DialogTitle>
             <DialogDescription>
-              Directly issue an official certificate to any student with a unique <code className="font-mono text-xs text-primary">itech-...</code> verification ID.
+              Directly issue an official certificate to any student with searchable student and course selection.
             </DialogDescription>
           </DialogHeader>
 
           <form onSubmit={handleGenerateSubmit} className="space-y-4 py-2">
+            {/* Searchable Student Selector */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Select Student</Label>
-              <Select value={genStudentId} onValueChange={setGenStudentId}>
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Choose a student..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {students.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      {s.name} ({s.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Select Student *</span>
+                {genStudentId && (
+                  <span className="text-[11px] text-primary font-normal">
+                    Selected: {userName(genStudentId)}
+                  </span>
+                )}
+              </Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search student by name, email, or ID..."
+                  value={studentSearch}
+                  onChange={(e) => setStudentSearch(e.target.value)}
+                  className="pl-8 text-xs h-9"
+                />
+              </div>
+              <div className="max-h-36 overflow-y-auto rounded-lg border border-border/60 bg-secondary/10 p-1 divide-y divide-border/20">
+                {filteredStudents.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-muted-foreground">
+                    No students matching "{studentSearch}".
+                  </div>
+                ) : (
+                  filteredStudents.slice(0, 15).map((s) => {
+                    const isSelected = genStudentId === s.id;
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => {
+                          setGenStudentId(s.id);
+                          setStudentSearch("");
+                        }}
+                        className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-xs ${
+                          isSelected
+                            ? "bg-primary/20 text-primary font-medium border border-primary/30"
+                            : "hover:bg-accent/40"
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-medium truncate">{s.name}</div>
+                          <div className="text-[11px] text-muted-foreground truncate">{s.email} · {s.id}</div>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
+            {/* Searchable Course Selector */}
             <div className="space-y-1.5">
-              <Label className="text-xs">Select Course</Label>
-              <Select value={genCourseId} onValueChange={setGenCourseId}>
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Choose a course..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {courses.map((crs) => (
-                    <SelectItem key={crs.id} value={crs.id}>
-                      {crs.name} ({crs.code})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Select Course *</span>
+                {genCourseId && (
+                  <span className="text-[11px] text-primary font-normal">
+                    Selected: {courseName(genCourseId)}
+                  </span>
+                )}
+              </Label>
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Search course by title, code, or ID..."
+                  value={courseSearch}
+                  onChange={(e) => setCourseSearch(e.target.value)}
+                  className="pl-8 text-xs h-9"
+                />
+              </div>
+              <div className="max-h-36 overflow-y-auto rounded-lg border border-border/60 bg-secondary/10 p-1 divide-y divide-border/20">
+                {filteredCourses.length === 0 ? (
+                  <div className="p-3 text-center text-xs text-muted-foreground">
+                    No courses matching "{courseSearch}".
+                  </div>
+                ) : (
+                  filteredCourses.slice(0, 15).map((crs) => {
+                    const isSelected = genCourseId === crs.id;
+                    return (
+                      <div
+                        key={crs.id}
+                        onClick={() => {
+                          setGenCourseId(crs.id);
+                          setCourseSearch("");
+                        }}
+                        className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-xs ${
+                          isSelected
+                            ? "bg-primary/20 text-primary font-medium border border-primary/30"
+                            : "hover:bg-accent/40"
+                        }`}
+                      >
+                        <div className="min-w-0 pr-2">
+                          <div className="font-medium truncate">{crs.name}</div>
+                          <div className="text-[11px] text-muted-foreground truncate">Code: {crs.code || "N/A"}</div>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2 className="h-4 w-4 text-primary shrink-0" />
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -419,14 +545,14 @@ function AdminCertificates() {
             <div className="space-y-1.5">
               <Label className="text-xs">Admin Note (Optional)</Label>
               <Input
-                placeholder="e.g. Issued for fast-track completion"
+                placeholder="e.g. Issued for exceptional performance or fast-track completion"
                 value={genNote}
                 onChange={(e) => setGenNote(e.target.value)}
                 className="text-xs"
               />
             </div>
 
-            <DialogFooter className="pt-2">
+            <DialogFooter className="pt-2 gap-2">
               <Button type="button" variant="outline" onClick={() => setIsGenerating(false)}>
                 Cancel
               </Button>
@@ -435,6 +561,83 @@ function AdminCertificates() {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Visual Certificate Preview & Print Dialog */}
+      <Dialog open={!!previewCert} onOpenChange={(o) => !o && setPreviewCert(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" /> Certificate of Completion
+            </DialogTitle>
+            <DialogDescription>
+              Verified iTech Academy credential issued to student.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewCert && (
+            <div className="space-y-6 py-2">
+              {/* Interactive Certificate Card Preview */}
+              <div className="rounded-2xl border-2 border-red-500/40 bg-gradient-to-br from-card via-secondary/20 to-background p-6 sm:p-8 text-center space-y-4 shadow-xl relative overflow-hidden">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <div className="h-10 w-10 rounded-xl gradient-primary flex items-center justify-center text-primary-foreground font-bold font-serif text-lg">
+                    iT
+                  </div>
+                  <span className="text-sm font-bold uppercase tracking-[0.25em] text-foreground">iTech Academy</span>
+                </div>
+                <div className="text-xs uppercase tracking-[0.25em] text-primary font-bold">Official Certificate of Completion</div>
+                <div className="text-xs text-muted-foreground italic">This certifies that</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
+                  {userName(previewCert.studentId)}
+                </div>
+                <div className="text-xs text-muted-foreground">has successfully completed the curriculum and examinations for</div>
+                <div className="text-lg sm:text-xl font-bold text-primary max-w-lg mx-auto leading-snug">
+                  {courseName(previewCert.courseId)}
+                </div>
+                
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-xs font-semibold text-primary my-1">
+                  Grade Score: {previewCert.score}%
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-6 border-t border-border/50 text-xs">
+                  <div>
+                    <div className="font-semibold text-foreground">
+                      {users.find((u) => u.id === courses.find((x) => x.id === previewCert.courseId)?.teacherId)?.name ?? "Course Instructor"}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Instructor</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">{previewCert.issuedAt ?? new Date().toISOString().slice(0, 10)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Date Issued</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">Ram Subramaniyan</div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Founder & MD</div>
+                  </div>
+                </div>
+
+                <div className="pt-3 text-[11px] font-mono text-muted-foreground flex items-center justify-center gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                  <span>Verified ID: <strong className="text-foreground">{previewCert.id}</strong></span>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button variant="outline" onClick={() => setPreviewCert(null)}>
+                  Close
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handlePrint(previewCert)}
+                    className="gradient-primary text-primary-foreground border-0 gap-1.5"
+                  >
+                    <Printer className="h-4 w-4" /> Print Certificate
+                  </Button>
+                </div>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 

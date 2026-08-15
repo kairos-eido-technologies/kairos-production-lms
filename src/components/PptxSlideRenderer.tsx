@@ -473,14 +473,53 @@ export function PptxSlideRenderer({ src, title, onComplete }: PptxSlideRendererP
 
         {/* ── Slides ── */}
         {status === "done" && slides.length > 0 && (
-          <>
-            <SlideCard
-              slide={slides[current - 1]}
-              accent={currentAccent}
-            />
+          <div className="relative w-full h-full group/pptx">
+            {/* Left-side click zone */}
+            {current > 1 && (
+              <div
+                onClick={goPrev}
+                className="absolute left-0 top-0 bottom-12 w-28 sm:w-40 z-20 flex items-center justify-start pl-4 cursor-pointer group/prev transition-colors hover:bg-white/5"
+                title="Previous Slide (Click Left / Left Arrow)"
+              >
+                <div className="h-11 w-11 rounded-full bg-black/70 text-white flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-md opacity-0 group-hover/prev:opacity-100 group-hover/pptx:opacity-40 hover:!opacity-100 transition-all transform -translate-x-2 group-hover/prev:translate-x-0">
+                  <ChevronLeft className="h-6 w-6" />
+                </div>
+              </div>
+            )}
+
+            {/* Right-side click zone */}
+            {current < slides.length && (
+              <div
+                onClick={goNext}
+                className="absolute right-0 top-0 bottom-12 w-28 sm:w-40 z-20 flex items-center justify-end pr-4 cursor-pointer group/next transition-colors hover:bg-white/5"
+                title="Next Slide (Click Right / Right Arrow)"
+              >
+                <div className="h-11 w-11 rounded-full bg-black/70 text-white flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-md opacity-0 group-hover/next:opacity-100 group-hover/pptx:opacity-40 hover:!opacity-100 transition-all transform translate-x-2 group-hover/next:translate-x-0">
+                  <ChevronRight className="h-6 w-6" />
+                </div>
+              </div>
+            )}
+
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                if (clickX < rect.width / 2) {
+                  goPrev();
+                } else {
+                  goNext();
+                }
+              }}
+              className="w-full h-full cursor-pointer"
+            >
+              <SlideCard
+                slide={slides[current - 1]}
+                accent={currentAccent}
+              />
+            </div>
 
             {/* Bottom navigation bar */}
-            <div className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between gap-3 px-4 py-2.5 bg-[#060b14]/95 border-t border-slate-800 backdrop-blur-sm">
+            <div className="absolute bottom-0 left-0 right-0 z-30 flex items-center justify-between gap-3 px-4 py-2.5 bg-[#060b14]/95 border-t border-slate-800 backdrop-blur-sm">
               {/* Dot strip */}
               <div className="flex items-center gap-1.5 flex-wrap max-w-[55%]">
                 {slides.map((_, i) => (
@@ -502,7 +541,7 @@ export function PptxSlideRenderer({ src, title, onComplete }: PptxSlideRendererP
                 View Only
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>

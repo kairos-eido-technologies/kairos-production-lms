@@ -5,6 +5,7 @@ import { login as apiLogin, register as apiRegister, logout as apiLogout, getSes
 interface AuthState {
   user: User | null;
   isLoading: boolean;
+  isInitialized: boolean;
   error: string | null;
   
   login: (email: string, password: string) => Promise<{ ok: true; role: Role } | { ok: false; error: string }>;
@@ -18,9 +19,24 @@ interface AuthState {
   resetPassword: (data: { email: string; code: string; newPassword: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
+function getInitialUser(): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem("itech-auth-user");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.id && parsed.email) return parsed;
+    }
+  } catch (e) {}
+  return null;
+}
+
+const initialUser = getInitialUser();
+
 export const useAuth = create<AuthState>()((set, get) => ({
-  user: null,
+  user: initialUser,
   isLoading: false,
+  isInitialized: !!initialUser,
   error: null,
 
   login: async (email, password) => {
@@ -29,9 +45,14 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = await apiLogin({ email, password });
 
       if (response.ok) {
+        const u = response.user as unknown as User;
+        if (typeof window !== "undefined") {
+          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+        }
         set({
-          user: response.user as unknown as User,
+          user: u,
           isLoading: false,
+          isInitialized: true,
         });
         return { ok: true, role: response.user.role as Role };
       }
@@ -39,7 +60,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       throw new Error(response.error || "Login failed");
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Login failed";
-      set({ error: errorMsg, isLoading: false });
+      set({ error: errorMsg, isLoading: false, isInitialized: true });
       return { ok: false, error: errorMsg };
     }
   },
@@ -61,9 +82,14 @@ export const useAuth = create<AuthState>()((set, get) => ({
       const response = await apiRegister({ name, email, password, phone });
 
       if (response.ok) {
+        const u = response.user as unknown as User;
+        if (typeof window !== "undefined") {
+          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+        }
         set({
-          user: response.user as unknown as User,
+          user: u,
           isLoading: false,
+          isInitialized: true,
         });
         return { ok: true };
       }
@@ -71,7 +97,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       throw new Error(response.error || "Registration failed");
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : "Registration failed";
-      set({ error: errorMsg, isLoading: false });
+      set({ error: errorMsg, isLoading: false, isInitialized: true });
       return { ok: false, error: errorMsg };
     }
   },
@@ -79,11 +105,17 @@ export const useAuth = create<AuthState>()((set, get) => ({
   logout: async () => {
     try {
       set({ isLoading: true });
+      if (typeof window !== "undefined") {
+        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+      }
       await apiLogout();
-      set({ user: null, isLoading: false });
+      set({ user: null, isLoading: false, isInitialized: true });
     } catch (err) {
       console.error("Logout error:", err);
-      set({ user: null, isLoading: false });
+      if (typeof window !== "undefined") {
+        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+      }
+      set({ user: null, isLoading: false, isInitialized: true });
     }
   },
 
@@ -92,16 +124,34 @@ export const useAuth = create<AuthState>()((set, get) => ({
       set({ isLoading: true, error: null });
       const session = await getSession();
       if (session.ok && session.user) {
-        set({ user: session.user as unknown as User, isLoading: false });
+        const u = session.user as unknown as User;
+        if (typeof window !== "undefined") {
+          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+        }
+        set({ user: u, isLoading: false, isInitialized: true });
       } else {
-        set({ user: null, isLoading: false });
+        if (typeof window !== "undefined") {
+          try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+        }
+        set({ user: null, isLoading: false, isInitialized: true });
       }
     } catch (err) {
-      set({ user: null, isLoading: false });
+      if (typeof window !== "undefined") {
+        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+      }
+      set({ user: null, isLoading: false, isInitialized: true });
     }
   },
 
-  setUser: (u) => set({ user: u }),
+  setUser: (u) => {
+    if (typeof window !== "undefined") {
+      try {
+        if (u) localStorage.setItem("itech-auth-user", JSON.stringify(u));
+        else localStorage.removeItem("itech-auth-user");
+      } catch (e) {}
+    }
+    set({ user: u, isInitialized: true });
+  },
 
   verifyEmail: async (code) => {
     try {

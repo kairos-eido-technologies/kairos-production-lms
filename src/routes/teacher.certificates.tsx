@@ -80,11 +80,17 @@ function TeacherCertificates() {
   const [open, setOpen] = useState(false);
   const [studentId, setStudentId] = useState("");
   const [courseId, setCourseId] = useState("");
+  const [teacherStudentSearch, setTeacherStudentSearch] = useState("");
+  const [teacherCourseSearch, setTeacherCourseSearch] = useState("");
   const [score, setScore] = useState(85);
   const [note, setNote] = useState("");
 
+  // Preview Certificate state
+  const [previewCert, setPreviewCert] = useState<Certificate | null>(null);
+
   const openFor = (sid: string, cid: string, suggestedScore: number) => {
     setStudentId(sid); setCourseId(cid); setScore(suggestedScore); setNote("");
+    setTeacherStudentSearch(""); setTeacherCourseSearch("");
     setOpen(true);
   };
 
@@ -94,6 +100,8 @@ function TeacherCertificates() {
     requestCertificate(studentId, courseId, score, note.trim() || undefined);
     toast.success("Request submitted to admin for approval.");
     setOpen(false);
+    setTeacherStudentSearch("");
+    setTeacherCourseSearch("");
   };
 
   const counts = {
@@ -279,7 +287,14 @@ function TeacherCertificates() {
                     </Badge>
                     <Badge variant="outline" className="border-border">{c.score}%</Badge>
                     {c.status === "approved" && (
-                      <Button size="sm" variant="outline" onClick={() => handlePrint(c)}><Printer className="h-4 w-4 mr-1.5" />Print</Button>
+                      <div className="flex items-center gap-1.5">
+                        <Button size="sm" variant="outline" onClick={() => setPreviewCert(c)}>
+                          <Eye className="h-4 w-4 mr-1 text-primary" />View
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => handlePrint(c)}>
+                          <Printer className="h-4 w-4 mr-1 text-primary" />Print
+                        </Button>
+                      </div>
                     )}
                   </GlassCard>
                 );})}
@@ -300,6 +315,7 @@ function TeacherCertificates() {
         </TabsContent>
       </Tabs>
 
+      {/* Proctor Activity Log Modal */}
       <Dialog open={!!viewingLog} onOpenChange={(o) => !o && setViewingLog(null)}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
@@ -332,47 +348,201 @@ function TeacherCertificates() {
         </DialogContent>
       </Dialog>
 
+      {/* Certificate Request Dialog with Searchable Selectors */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Recommend for certificate</DialogTitle>
-            <DialogDescription>Admin approval required before the certificate is issued.</DialogDescription>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" /> Recommend for Certificate
+            </DialogTitle>
+            <DialogDescription>Admin approval required before the certificate is officially issued.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label>Course</Label>
-              <Select value={courseId} onValueChange={setCourseId}>
-                <SelectTrigger><SelectValue placeholder="Select course" /></SelectTrigger>
-                <SelectContent>
-                  {myCourses.map((c) => <SelectItem key={c.id} value={c.id}>{c.code} · {c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label>Student</Label>
-              <Select value={studentId} onValueChange={setStudentId}>
-                <SelectTrigger><SelectValue placeholder="Select student" /></SelectTrigger>
-                <SelectContent>
-                  {(courses.find((c) => c.id === courseId)?.studentIds ?? []).map((sid) => {
-                    const s = users.find((u) => u.id === sid);
-                    return s ? <SelectItem key={sid} value={sid}>{s.name}</SelectItem> : null;
+          <div className="space-y-4 py-2">
+            {/* Searchable Course Picker */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Select Course *</span>
+                {courseId && (
+                  <span className="text-[11px] text-primary font-normal">
+                    Selected: {courseName(courseId)}
+                  </span>
+                )}
+              </Label>
+              <Input
+                placeholder="Search course..."
+                value={teacherCourseSearch}
+                onChange={(e) => setTeacherCourseSearch(e.target.value)}
+                className="text-xs h-8"
+              />
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-border/60 bg-secondary/10 p-1 divide-y divide-border/20">
+                {myCourses
+                  .filter((c) => {
+                    const q = teacherCourseSearch.trim().toLowerCase();
+                    return !q || c.name.toLowerCase().includes(q) || (c.code && c.code.toLowerCase().includes(q));
+                  })
+                  .map((c) => {
+                    const isSelected = courseId === c.id;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => {
+                          setCourseId(c.id);
+                          setStudentId(""); // reset student if course changes
+                        }}
+                        className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-xs ${
+                          isSelected ? "bg-primary/20 text-primary font-medium border border-primary/30" : "hover:bg-accent/40"
+                        }`}
+                      >
+                        <div>
+                          <div className="font-medium">{c.name}</div>
+                          <div className="text-[11px] text-muted-foreground">{c.code}</div>
+                        </div>
+                        {isSelected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                      </div>
+                    );
                   })}
-                </SelectContent>
-              </Select>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Score (%)</Label>
-              <Input type="number" min={0} max={100} value={score} onChange={(e) => setScore(Number(e.target.value))} />
+
+            {/* Searchable Student Picker */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Select Student *</span>
+                {studentId && (
+                  <span className="text-[11px] text-primary font-normal">
+                    Selected: {studentName(studentId)}
+                  </span>
+                )}
+              </Label>
+              <Input
+                placeholder="Search student..."
+                value={teacherStudentSearch}
+                onChange={(e) => setTeacherStudentSearch(e.target.value)}
+                className="text-xs h-8"
+              />
+              <div className="max-h-32 overflow-y-auto rounded-lg border border-border/60 bg-secondary/10 p-1 divide-y divide-border/20">
+                {(() => {
+                  const courseStudents = (courses.find((c) => c.id === courseId)?.studentIds ?? [])
+                    .map((sid) => users.find((u) => u.id === sid))
+                    .filter(Boolean);
+                  const list = courseStudents.length > 0 ? courseStudents : users.filter((u) => u.role === "student");
+                  const filtered = list.filter((s: any) => {
+                    const q = teacherStudentSearch.trim().toLowerCase();
+                    return !q || s.name.toLowerCase().includes(q) || s.email.toLowerCase().includes(q);
+                  });
+                  if (filtered.length === 0) {
+                    return <div className="p-2 text-center text-xs text-muted-foreground">No students found</div>;
+                  }
+                  return filtered.map((s: any) => {
+                    const isSelected = studentId === s.id;
+                    return (
+                      <div
+                        key={s.id}
+                        onClick={() => setStudentId(s.id)}
+                        className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors text-xs ${
+                          isSelected ? "bg-primary/20 text-primary font-medium border border-primary/30" : "hover:bg-accent/40"
+                        }`}
+                      >
+                        <div>
+                          <div className="font-medium">{s.name}</div>
+                          <div className="text-[11px] text-muted-foreground">{s.email}</div>
+                        </div>
+                        {isSelected && <CheckCircle2 className="h-4 w-4 text-primary" />}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label>Note for admin (optional)</Label>
-              <Textarea rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this learner ready?" />
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Passing Score (%)</Label>
+              <Input type="number" min={0} max={100} value={score} onChange={(e) => setScore(Number(e.target.value))} className="text-xs" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs">Note for admin (optional)</Label>
+              <Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this learner ready?" className="text-xs" />
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={submit} className="gradient-primary text-primary-foreground border-0">Submit request</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Visual Certificate Preview & Print Dialog for Teacher */}
+      <Dialog open={!!previewCert} onOpenChange={(o) => !o && setPreviewCert(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Award className="h-5 w-5 text-primary" /> Certificate of Completion
+            </DialogTitle>
+            <DialogDescription>
+              Verified iTech Academy credential issued to student.
+            </DialogDescription>
+          </DialogHeader>
+
+          {previewCert && (
+            <div className="space-y-6 py-2">
+              <div className="rounded-2xl border-2 border-red-500/40 bg-gradient-to-br from-card via-secondary/20 to-background p-6 sm:p-8 text-center space-y-4 shadow-xl relative overflow-hidden">
+                <div className="flex items-center justify-center gap-2 mb-2">
+                  <div className="h-10 w-10 rounded-xl gradient-primary flex items-center justify-center text-primary-foreground font-bold font-serif text-lg">
+                    iT
+                  </div>
+                  <span className="text-sm font-bold uppercase tracking-[0.25em] text-foreground">iTech Academy</span>
+                </div>
+                <div className="text-xs uppercase tracking-[0.25em] text-primary font-bold">Official Certificate of Completion</div>
+                <div className="text-xs text-muted-foreground italic">This certifies that</div>
+                <div className="text-2xl sm:text-3xl font-extrabold text-foreground tracking-tight">
+                  {studentName(previewCert.studentId)}
+                </div>
+                <div className="text-xs text-muted-foreground">has successfully completed the curriculum and examinations for</div>
+                <div className="text-lg sm:text-xl font-bold text-primary max-w-lg mx-auto leading-snug">
+                  {courseName(previewCert.courseId)}
+                </div>
+                
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/30 text-xs font-semibold text-primary my-1">
+                  Grade Score: {previewCert.score}%
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 pt-6 border-t border-border/50 text-xs">
+                  <div>
+                    <div className="font-semibold text-foreground">{user?.name ?? "Course Instructor"}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Instructor</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">{previewCert.issuedAt ?? new Date().toISOString().slice(0, 10)}</div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Date Issued</div>
+                  </div>
+                  <div>
+                    <div className="font-semibold text-foreground">Ram Subramaniyan</div>
+                    <div className="text-[10px] text-muted-foreground uppercase mt-0.5">Founder & MD</div>
+                  </div>
+                </div>
+
+                <div className="pt-3 text-[11px] font-mono text-muted-foreground flex items-center justify-center gap-2">
+                  <ShieldCheck className="h-3.5 w-3.5 text-success" />
+                  <span>Verified ID: <strong className="text-foreground">{previewCert.id}</strong></span>
+                </div>
+              </div>
+
+              <DialogFooter className="gap-2 sm:justify-between">
+                <Button variant="outline" onClick={() => setPreviewCert(null)}>
+                  Close
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => handlePrint(previewCert)}
+                    className="gradient-primary text-primary-foreground border-0 gap-1.5"
+                  >
+                    <Printer className="h-4 w-4" /> Print Certificate
+                  </Button>
+                </div>
+              </DialogFooter>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

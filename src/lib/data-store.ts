@@ -1060,18 +1060,29 @@ export const useData = create<DataState>()((set, get) => ({
           issuedAt: today,
           teacherNote: note || "Issued by Administrator",
         };
+        // Update local state immediately
+        set((s) => ({
+          certificates: [cert, ...s.certificates.filter((c) => c.id !== id)],
+        }));
         (async () => {
           try {
-            await fetch("/api/certificates", {
+            const resp = await fetch("/api/certificates", {
               method: "POST",
               headers: { "content-type": "application/json" },
               body: JSON.stringify(cert),
             });
+            if (resp.ok) {
+              const json = await resp.json();
+              if (json.certificate) {
+                set((s) => ({
+                  certificates: [json.certificate, ...s.certificates.filter((c) => c.id !== id && c.id !== json.certificate.id)],
+                }));
+              }
+            }
           } catch (err) {
             console.error("issueCertificateDirectly error", err);
           }
         })();
-        set((s) => ({ certificates: [cert, ...s.certificates] }));
         get().notify(studentId, "Certificate Issued", `You have been issued a certificate. ID: ${id}`, "/student/certificates");
         return id;
       },

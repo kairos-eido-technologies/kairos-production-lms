@@ -39,7 +39,12 @@ export async function refreshData(force = false) {
             const json = await res.json();
             if (json[key]) {
               if (key === 'certificates') {
-                useData.setState({ certificates: normalizeCertificateList(json.certificates) });
+                const incoming = normalizeCertificateList(json.certificates || []);
+                const incomingIds = new Set(incoming.map((c) => c.id));
+                useData.setState((s) => {
+                  const localOnly = s.certificates.filter((c) => !incomingIds.has(c.id));
+                  return { certificates: [...localOnly, ...incoming] };
+                });
               } else {
                 useData.setState({ [key]: json[key] });
               }

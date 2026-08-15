@@ -75,6 +75,9 @@ export async function loginRoute(request: Request): Promise<Response> {
           role: adminUser.role,
         });
 
+        const isProd = process.env.NODE_ENV === "production";
+        const cookieStr = `auth_token=${token}; HttpOnly; ${isProd ? "Secure; " : ""}Path=/; Max-Age=86400; SameSite=Lax`;
+
         return new Response(
           JSON.stringify({
             ok: true,
@@ -85,7 +88,7 @@ export async function loginRoute(request: Request): Promise<Response> {
             status: 200,
             headers: {
               "content-type": "application/json",
-              "set-cookie": `auth_token=${token}; HttpOnly; Secure; Path=/; Max-Age=86400; SameSite=Strict`,
+              "set-cookie": cookieStr,
             },
           }
         );
@@ -147,6 +150,9 @@ export async function loginRoute(request: Request): Promise<Response> {
 
     const { passwordHash: _, ...userWithoutPassword } = user;
 
+    const isProd = process.env.NODE_ENV === "production";
+    const cookieStr = `auth_token=${token}; HttpOnly; ${isProd ? "Secure; " : ""}Path=/; Max-Age=86400; SameSite=Lax`;
+
     return new Response(
       JSON.stringify({
         ok: true,
@@ -157,7 +163,7 @@ export async function loginRoute(request: Request): Promise<Response> {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "set-cookie": `auth_token=${token}; HttpOnly; Secure; Path=/; Max-Age=86400; SameSite=Strict`,
+          "set-cookie": cookieStr,
         },
       }
     );

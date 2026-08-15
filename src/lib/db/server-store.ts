@@ -59,6 +59,7 @@ class ServerStore {
   private coursesList: any[] = [];
   private certificatesList: any[] = [];
   private assessmentsList: any[] = [];
+  private questionsList: any[] = [];
   private submissionsList: any[] = [];
   private progressMap = new Map<string, string[]>();
   private eventsList: any[] = [];

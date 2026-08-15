@@ -214,8 +214,45 @@ export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) 
 
         {/* Render slide images */}
         {!loading && totalSlides > 0 && (
-          <div className="relative w-full h-full flex flex-col justify-between items-center bg-black select-none p-4">
-            <div className="relative w-full flex-1 flex items-center justify-center overflow-hidden">
+          <div className="relative w-full h-full flex flex-col justify-between items-center bg-black select-none p-4 group/pptx">
+            {/* Left-side click zone */}
+            {currentSlide > 1 && (
+              <div
+                onClick={handlePrev}
+                className="absolute left-0 top-0 bottom-12 w-28 sm:w-40 z-20 flex items-center justify-start pl-4 cursor-pointer group/prev transition-colors hover:bg-white/5"
+                title="Previous Slide (Click Left / Left Arrow)"
+              >
+                <div className="h-11 w-11 rounded-full bg-black/70 text-white flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-md opacity-0 group-hover/prev:opacity-100 group-hover/pptx:opacity-40 hover:!opacity-100 transition-all transform -translate-x-2 group-hover/prev:translate-x-0">
+                  <ChevronLeft className="h-6 w-6" />
+                </div>
+              </div>
+            )}
+
+            {/* Right-side click zone */}
+            {currentSlide < totalSlides && (
+              <div
+                onClick={handleNext}
+                className="absolute right-0 top-0 bottom-12 w-28 sm:w-40 z-20 flex items-center justify-end pr-4 cursor-pointer group/next transition-colors hover:bg-white/5"
+                title="Next Slide (Click Right / Right Arrow)"
+              >
+                <div className="h-11 w-11 rounded-full bg-black/70 text-white flex items-center justify-center shadow-2xl border border-white/20 backdrop-blur-md opacity-0 group-hover/next:opacity-100 group-hover/pptx:opacity-40 hover:!opacity-100 transition-all transform translate-x-2 group-hover/next:translate-x-0">
+                  <ChevronRight className="h-6 w-6" />
+                </div>
+              </div>
+            )}
+
+            <div
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                if (clickX < rect.width / 2) {
+                  handlePrev();
+                } else {
+                  handleNext();
+                }
+              }}
+              className="relative w-full flex-1 flex items-center justify-center overflow-hidden cursor-pointer"
+            >
               <img
                 src={slideImages[currentSlide - 1]}
                 alt={`Slide ${currentSlide}`}
@@ -225,7 +262,7 @@ export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) 
             </div>
 
             {/* Bottom dot indicators & protection label */}
-            <div className="w-full flex items-center justify-between px-4 py-2 bg-slate-950/90 border-t border-slate-800 rounded-b-lg mt-2">
+            <div className="w-full flex items-center justify-between px-4 py-2 bg-slate-950/90 border-t border-slate-800 rounded-b-lg mt-2 relative z-30">
               <div className="flex items-center gap-1.5 max-w-[60%] flex-wrap">
                 {slideImages.map((_, idx) => (
                   <button

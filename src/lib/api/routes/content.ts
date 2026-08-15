@@ -1290,7 +1290,7 @@ export async function contentRoute(request: Request): Promise<Response> {
       try {
         let query = supabase.from("certificates").select("*");
         if (status) query = query.eq("status", status);
-        const { data: sCerts } = await query;
+        const { data: sCerts, error: sErr } = await query;
 
         if (sCerts && sCerts.length > 0) {
           mapped = sCerts.map((c: any) => ({
@@ -1300,19 +1300,28 @@ export async function contentRoute(request: Request): Promise<Response> {
             score: typeof c.score === "number" ? c.score : (parseInt(c.score, 10) || 100),
             requestedAt: c.requested_at ? String(c.requested_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
             status: c.status,
-            issuedAt: c.issued_at ? String(c.issued_at).slice(0, 10) : (c.issuedAt ? String(c.issuedAt).slice(0, 10) : undefined),
+            issuedAt: c.issued_at ? String(c.issued_at).slice(0, 10) : (c.issuedAt ? String(c.issuedAt).slice(0, 10) : (c.status === "approved" ? String(c.requested_at || new Date().toISOString()).slice(0, 10) : undefined)),
             teacherNote: c.teacher_note || c.teacherNote || undefined,
             rejectionReason: c.rejection_reason || c.rejectionReason || undefined,
             proctorLog: (c.proctor_log || c.proctorLog) ?? undefined,
           }));
-          serverStore.setCertificates(mapped);
         }
-      } catch (sErr) {}
-
-      if (mapped.length === 0) {
-        mapped = serverStore.getCertificates();
-        if (status) mapped = mapped.filter((c) => c.status === status);
+      } catch (sErr) {
+        console.warn("Supabase certificates fetch warning:", sErr);
       }
+
+      // Merge with in-memory serverStore so no newly created certificates are lost
+      const memoryCerts = serverStore.getCertificates();
+      const mappedIds = new Set(mapped.map((c: any) => c.id));
+      for (const mc of memoryCerts) {
+        if (!mappedIds.has(mc.id)) {
+          if (!status || mc.status === status) {
+            mapped.unshift(mc);
+          }
+        }
+      }
+
+      serverStore.setCertificates(mapped);
 
       return new Response(JSON.stringify({ certificates: mapped }), {
         status: 200,
@@ -1332,26 +1341,29 @@ export async function contentRoute(request: Request): Promise<Response> {
         score: typeof body.score === "number" ? body.score : (parseInt(body.score, 10) || 100),
         status: body.status || "pending",
         requestedAt: requestedAt.toISOString().slice(0, 10),
-        issuedAt: body.issuedAt ? String(body.issuedAt).slice(0, 10) : undefined,
+        issuedAt: body.issuedAt ? String(body.issuedAt).slice(0, 10) : (body.status === "approved" ? new Date().toISOString().slice(0, 10) : undefined),
         teacherNote: body.teacherNote || undefined,
         rejectionReason: body.rejectionReason || undefined,
         proctorLog: body.proctorLog || undefined,
       };
 
       try {
-        await supabase.from("certificates").insert({
+        const { error: sbErr } = await supabase.from("certificates").upsert({
           id,
           student_id: body.studentId,
           course_id: body.courseId,
           score: created.score,
           status: created.status,
           requested_at: requestedAt.toISOString(),
-          issued_at: body.issuedAt ? new Date(body.issuedAt).toISOString() : null,
-          teacher_note: body.teacherNote || null,
-          rejection_reason: body.rejectionReason || null,
+          teacher_note: body.teacherNote || (created.issuedAt ? `Issued: ${created.issuedAt}` : null),
           proctor_log: body.proctorLog || null,
-        });
-      } catch (sErr) {}
+        }, { onConflict: "id" });
+        if (sbErr && sbErr.code !== "23503") {
+          console.warn("Supabase certificate upsert notice:", sbErr);
+        }
+      } catch (sErr) {
+        console.warn("Supabase certificate upsert exception:", sErr);
+      }
 
       serverStore.saveCertificate(created);
 
@@ -1368,6 +1380,16 @@ export async function contentRoute(request: Request): Promise<Response> {
             teacherNote: body.teacherNote || null,
             rejectionReason: body.rejectionReason || null,
             proctorLog: body.proctorLog || null,
+          }).onConflictDoUpdate({
+            target: certificates.id,
+            set: {
+              status: created.status,
+              issuedAt: body.issuedAt ? new Date(body.issuedAt) : null,
+              score: created.score,
+              teacherNote: body.teacherNote || null,
+              rejectionReason: body.rejectionReason || null,
+              proctorLog: body.proctorLog || null,
+            },
           });
         }
       } catch (dbErr) {}
@@ -1394,7 +1416,7 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       return new Response(
-        JSON.stringify({ certificate: created }),
+        JSON.stringify({ ok: true, certificate: created }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -1408,7 +1430,6 @@ export async function contentRoute(request: Request): Promise<Response> {
       try {
         await supabase.from("certificates").update({
           status: "approved",
-          issued_at: new Date().toISOString(),
         }).eq("id", id);
       } catch (sErr) {}
 
@@ -1437,7 +1458,7 @@ export async function contentRoute(request: Request): Promise<Response> {
       }
 
       return new Response(
-        JSON.stringify({ certificate: updated }),
+        JSON.stringify({ ok: true, certificate: updated }),
         { status: 200, headers: { "content-type": "application/json" } }
       );
     }
@@ -1451,7 +1472,6 @@ export async function contentRoute(request: Request): Promise<Response> {
       try {
         await supabase.from("certificates").update({
           status: "rejected",
-          rejection_reason: body.reason || null,
         }).eq("id", id);
       } catch (sErr) {}
 
