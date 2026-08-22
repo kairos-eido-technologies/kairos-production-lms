@@ -60,11 +60,21 @@ export default async function handler(req, res) {
 
     let body = undefined;
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
-      if (req.body) {
+      if (req.body !== undefined && req.body !== null) {
         body =
           typeof req.body === "string" || Buffer.isBuffer(req.body)
             ? req.body
             : JSON.stringify(req.body);
+      } else {
+        body = await new Promise((resolve) => {
+          const chunks = [];
+          req.on("data", (chunk) => chunks.push(chunk));
+          req.on("end", () => {
+            if (chunks.length === 0) resolve(undefined);
+            else resolve(Buffer.concat(chunks));
+          });
+          req.on("error", () => resolve(undefined));
+        });
       }
     }
 

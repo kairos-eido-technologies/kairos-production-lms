@@ -33,11 +33,11 @@ export function getDb() {
   const connectionString = getConnectionString();
   if (!connectionString) {
     throw new Error(
-      "[DATABASE] DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env file.",
+      "[DATABASE] DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env file or Vercel Environment Variables.",
     );
   }
-  if (!client || currentUrl !== connectionString || process.env.VERCEL) {
-    if (client && !process.env.VERCEL) {
+  if (!client || currentUrl !== connectionString) {
+    if (client) {
       try {
         client.end().catch(() => {});
       } catch (e) {}
@@ -46,7 +46,7 @@ export function getDb() {
     client = postgres(connectionString, {
       prepare: false,
       ssl: "require",
-      max: process.env.VERCEL ? 1 : 10,
+      max: 10,
       idle_timeout: 20,
       connect_timeout: 10,
       max_lifetime: 60 * 15,

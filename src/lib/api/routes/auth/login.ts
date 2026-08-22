@@ -69,10 +69,10 @@ export async function loginRoute(request: Request): Promise<Response> {
         },
       },
     );
-  } catch (error) {
+  } catch (error: any) {
     logger.error({ err: error }, "Login route error");
     return new Response(
-      JSON.stringify({ error: "Internal server error" }),
+      JSON.stringify({ error: error?.message || "Internal server error" }),
       { status: 500, headers: { "content-type": "application/json" } },
     );
   }
