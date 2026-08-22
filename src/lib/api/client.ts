@@ -84,8 +84,14 @@ export async function logout(): Promise<void> {
 }
 
 export async function getSession(): Promise<SessionResponse> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("itech-auth-token") : null;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
   const response = await fetch(`${API_BASE}/auth/session`, {
     method: "GET",
+    headers,
     credentials: "include",
   });
 
@@ -94,8 +100,14 @@ export async function getSession(): Promise<SessionResponse> {
 }
 
 export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("itech-auth-token") : null;
+  const headers = new Headers(options.headers || {});
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   return fetch(url, {
     ...options,
+    headers,
     credentials: "include",
   });
 }

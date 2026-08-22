@@ -66,6 +66,9 @@ export const useAuth = create<AuthState>()((set, get) => ({
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem("itech-auth-user", JSON.stringify(u));
+            if (response.token) {
+              localStorage.setItem("itech-auth-token", response.token);
+            }
           } catch (e) {}
         }
         set({
@@ -73,6 +76,11 @@ export const useAuth = create<AuthState>()((set, get) => ({
           isLoading: false,
           isInitialized: true,
         });
+        // Immediately sync data from the server with authenticated credentials
+        try {
+          const { refreshData } = await import("./data-load-init");
+          refreshData(true);
+        } catch (e) {}
         return { ok: true, role: response.user.role as Role };
       }
 
@@ -105,6 +113,9 @@ export const useAuth = create<AuthState>()((set, get) => ({
         if (typeof window !== "undefined") {
           try {
             localStorage.setItem("itech-auth-user", JSON.stringify(u));
+            if (response.token) {
+              localStorage.setItem("itech-auth-token", response.token);
+            }
           } catch (e) {}
         }
         set({
@@ -112,6 +123,10 @@ export const useAuth = create<AuthState>()((set, get) => ({
           isLoading: false,
           isInitialized: true,
         });
+        try {
+          const { refreshData } = await import("./data-load-init");
+          refreshData(true);
+        } catch (e) {}
         return { ok: true };
       }
 
@@ -129,6 +144,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (typeof window !== "undefined") {
         try {
           localStorage.removeItem("itech-auth-user");
+          localStorage.removeItem("itech-auth-token");
         } catch (e) {}
       }
       await apiLogout();
@@ -138,6 +154,7 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (typeof window !== "undefined") {
         try {
           localStorage.removeItem("itech-auth-user");
+          localStorage.removeItem("itech-auth-token");
         } catch (e) {}
       }
       set({ user: null, isLoading: false, isInitialized: true });

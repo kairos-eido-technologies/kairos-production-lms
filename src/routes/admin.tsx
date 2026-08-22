@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/store";
+import { refreshData } from "@/lib/data-load-init";
 
 export const Route = createFileRoute("/admin")({ component: AdminLayout });
 
@@ -14,9 +15,13 @@ function AdminLayout() {
       initializeSession();
       return;
     }
-    if (!user) nav({ to: "/login" });
-    else if (user.isEmailVerified === false) nav({ to: "/verify-email" });
-    else if (user.role !== "admin") nav({ to: `/${user.role}` as any });
+    if (!user) {
+      nav({ to: "/login" });
+    } else if (user.role !== "admin") {
+      nav({ to: `/${user.role}` as any });
+    } else {
+      refreshData();
+    }
   }, [user, isInitialized, nav, initializeSession]);
 
   if (!isInitialized) {

@@ -2,6 +2,7 @@ import { createFileRoute, Outlet, useNavigate, useRouterState } from "@tanstack/
 import { useEffect } from "react";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/store";
+import { refreshData } from "@/lib/data-load-init";
 
 export const Route = createFileRoute("/student")({ component: StudentLayout });
 
@@ -21,10 +22,10 @@ function StudentLayout() {
     }
     if (!user) {
       nav({ to: "/login" });
-    } else if (user.isEmailVerified === false) {
-      nav({ to: "/verify-email" });
     } else if (isStudentRoute && user.role !== "student" && !isTeacherOrAdminPreview) {
       nav({ to: `/${user.role}` as any });
+    } else {
+      refreshData();
     }
   }, [user, isInitialized, nav, isStudentRoute, isTeacherOrAdminPreview, initializeSession]);
 
