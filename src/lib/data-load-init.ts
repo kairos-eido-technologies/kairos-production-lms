@@ -30,12 +30,10 @@ export async function refreshData(force = false, requestedKeys?: string[]) {
   }
   isRefreshing = true;
 
-  const isAuth = !!(
-    localStorage.getItem("itech-auth-user") ||
-    localStorage.getItem("itech-auth-token") ||
-    document.cookie.includes("auth_token=")
-  );
+  const token = localStorage.getItem("itech-auth-token");
+  const isAuth = !!(token || document.cookie.includes("auth_token="));
 
+  // Only fetch protected endpoints if authenticated; anonymous visitors only load courses
   const keysToFetch = (requestedKeys || (isAuth ? Object.keys(ALL_ENDPOINTS) : ["courses"])).filter(
     (key) => {
       if (force) return true;
@@ -49,13 +47,18 @@ export async function refreshData(force = false, requestedKeys?: string[]) {
     return;
   }
 
+  const authHeaders: Record<string, string> = {};
+  if (token) {
+    authHeaders["Authorization"] = `Bearer ${token}`;
+  }
+
   try {
     await Promise.all(
       keysToFetch.map(async (key) => {
         const url = ALL_ENDPOINTS[key];
         if (!url) return;
         try {
-          const res = await fetch(url, { credentials: "include" });
+          const res = await fetch(url, { headers: authHeaders, credentials: "include" });
           if (res.ok) {
             const json = await res.json();
             cacheTimestamps[key] = Date.now();
@@ -81,7 +84,7 @@ export async function refreshData(force = false, requestedKeys?: string[]) {
     // Separately load extra attempts for authenticated users if assessments requested or stale
     if (isAuth && (force || keysToFetch.includes("assessments"))) {
       try {
-        const res = await fetch("/api/extra-attempts", { credentials: "include" });
+        const res = await fetch("/api/extra-attempts", { headers: authHeaders, credentials: "include" });
         if (res.ok) {
           const json = await res.json();
           if (json.extraAttempts && typeof json.extraAttempts === "object") {
