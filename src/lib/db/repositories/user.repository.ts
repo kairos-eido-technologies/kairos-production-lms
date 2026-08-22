@@ -13,7 +13,7 @@ import {
   submissionResponses,
   progress,
 } from "../schema";
-import { eq, desc, or } from "drizzle-orm";
+import { eq, desc, or, sql } from "drizzle-orm";
 import { toIsoDate, toIso } from "./helpers";
 
 export interface RepositoryUser {
@@ -101,11 +101,20 @@ export const userRepository = {
   async getUserByEmail(email: string) {
     const cleanEmail = email.toLowerCase().trim();
     const db = getDb();
-    const u = await db.query.users.findFirst({
-      where: eq(users.email, cleanEmail),
-    });
-    if (!u) return null;
-    return u;
+    try {
+      const u = await db.query.users.findFirst({
+        where: sql`lower(${users.email}) = ${cleanEmail}`,
+      });
+      if (u) return u;
+      return null;
+    } catch {
+      const rows = await db
+        .select()
+        .from(users)
+        .where(sql`lower(${users.email}) = ${cleanEmail}`)
+        .limit(1);
+      return rows[0] || null;
+    }
   },
 
   async createUser(data: {

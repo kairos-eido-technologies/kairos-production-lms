@@ -11,19 +11,24 @@ try {
 } catch (e) {}
 
 function getConnectionString(): string {
-  let url = process.env.DATABASE_URL || "";
+  if (process.env.DATABASE_URL) {
+    return process.env.DATABASE_URL.trim().replace(/^["']|["']$/g, "");
+  }
+  if (process.env.SUPABASE_DATABASE_URL) {
+    return process.env.SUPABASE_DATABASE_URL.trim().replace(/^["']|["']$/g, "");
+  }
   try {
     const envFile = path.resolve(process.cwd(), ".env");
     if (fs.existsSync(envFile)) {
       const content = fs.readFileSync(envFile, "utf8");
       const match = content.match(/DATABASE_URL=(.+)/);
       if (match && match[1]) {
-        url = match[1].trim().replace(/^["']|["']$/g, "");
+        return match[1].trim().replace(/^["']|["']$/g, "");
       }
     }
   } catch (e) {}
 
-  return url;
+  return "";
 }
 
 let client: postgres.Sql | null = null;
