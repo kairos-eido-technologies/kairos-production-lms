@@ -1,9 +1,26 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import {
-  LayoutDashboard, Users, BookOpen, BarChart3, Award, FileEdit, ClipboardCheck,
-  MessageSquare, Bell, Search, LogOut, ShieldCheck, UserCheck, Calendar, Sun, Moon,
-  FileCheck, Inbox, ArrowLeft, Radio,
+  LayoutDashboard,
+  Users,
+  BookOpen,
+  BarChart3,
+  Award,
+  FileEdit,
+  ClipboardCheck,
+  MessageSquare,
+  Bell,
+  Search,
+  LogOut,
+  ShieldCheck,
+  UserCheck,
+  Calendar,
+  Sun,
+  Moon,
+  FileCheck,
+  Inbox,
+  ArrowLeft,
+  Radio,
 } from "lucide-react";
 import { Logo } from "./Logo";
 import { AppSwitcher, type NavItem } from "./AppSwitcher";
@@ -12,14 +29,17 @@ import { ParticleLayer } from "@/components/effects/ParticleLayer";
 import { useAuth } from "@/lib/store";
 import { useData } from "@/lib/data-store";
 import { refreshData } from "@/lib/data-load-init";
+import { setupRealtimeSubscriptions, teardownRealtimeSubscriptions } from "@/lib/realtime";
 import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { motion, AnimatePresence } from "framer-motion";
@@ -116,21 +136,26 @@ export function AppShell({ children }: { children: ReactNode }) {
     }
   }, [user, initializeSession]);
 
-  // Periodically poll backend for updates, and refresh when user focus returns to the tab
+  // Real-time updates via WebSockets + smart on-focus cache validation
   useEffect(() => {
     if (!user) return;
-    refreshData();
-    const interval = setInterval(refreshData, 12000); // 12 seconds poll
 
+    // Initialize instantaneous push updates for notifications, messages & certs
+    setupRealtimeSubscriptions(user.id, user.role);
+
+    // Initial on-demand data load
+    refreshData(false);
+
+    // On tab focus, re-validate critical notification badges if cache expired
     const handleFocus = () => {
-      refreshData();
+      refreshData(false, ["notifications", "messages"]);
     };
 
     window.addEventListener("focus", handleFocus);
     window.addEventListener("visibilitychange", handleFocus);
 
     return () => {
-      clearInterval(interval);
+      teardownRealtimeSubscriptions();
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("visibilitychange", handleFocus);
     };
@@ -150,7 +175,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   if (!user) return <>{children}</>;
   const items = navByRole[user.role];
 
-  const handleLogout = async () => { await logout(); nav({ to: "/login" }); };
+  const handleLogout = async () => {
+    await logout();
+    nav({ to: "/login" });
+  };
 
   const onSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -168,15 +196,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="min-h-screen bg-background flex flex-col relative overflow-hidden">
         <ParticleLayer className="fixed inset-0 pointer-events-none z-0 opacity-40" />
         <AppWatermark />
-        <main className="relative z-10 flex-1 p-6 lg:p-8">
-          {children}
-        </main>
+        <main className="relative z-10 flex-1 p-6 lg:p-8">{children}</main>
       </div>
     );
   }
 
   // Active module title
-  const activeItem = items.find((it) => (it.exact ? pathname === it.to : pathname.startsWith(it.to)));
+  const activeItem = items.find((it) =>
+    it.exact ? pathname === it.to : pathname.startsWith(it.to),
+  );
   const activeTitle = activeItem ? activeItem.label : "App Suite";
 
   return (
@@ -189,21 +217,33 @@ export function AppShell({ children }: { children: ReactNode }) {
       <header className="sticky top-0 z-40 h-16 glass-strong flex items-center justify-between gap-4 px-4 sm:px-6 border-b border-border/60">
         {/* Left: Brand Logo & App Launcher */}
         <div className="flex items-center gap-3">
-          <Link to={user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/student"} className="flex items-center gap-2">
+          <Link
+            to={
+              user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/student"
+            }
+            className="flex items-center gap-2"
+          >
             <Logo />
           </Link>
           <div className="h-5 w-px bg-border/80 hidden sm:block" />
 
           {/* Back to Apps Home or Content Builder Button */}
-          {((user.role === "admin" || user.role === "teacher") && pathname.startsWith("/student/")) ? (
+          {(user.role === "admin" || user.role === "teacher") &&
+          pathname.startsWith("/student/") ? (
             <Button
               variant="secondary"
               size="sm"
               onClick={() => {
-                const fromSource = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
+                const fromSource =
+                  typeof window !== "undefined"
+                    ? new URLSearchParams(window.location.search).get("from")
+                    : null;
                 const courseIdFromUrl = pathname.split("/student/courses/")[1]?.split("?")[0] || "";
                 const basePath = user.role === "admin" ? "/admin/content" : "/teacher/content";
-                const targetPath = (fromSource === "list" || !courseIdFromUrl) ? basePath : `${basePath}?courseId=${courseIdFromUrl}`;
+                const targetPath =
+                  fromSource === "list" || !courseIdFromUrl
+                    ? basePath
+                    : `${basePath}?courseId=${courseIdFromUrl}`;
                 nav({ to: targetPath as any });
               }}
               className="gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20 font-semibold transition-all duration-200 cursor-pointer"
@@ -211,14 +251,33 @@ export function AppShell({ children }: { children: ReactNode }) {
               <ArrowLeft className="h-3.5 w-3.5" />
               <span className="text-xs">Back to Content Builder</span>
             </Button>
-          ) : pathname !== (user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/student") && pathname !== (user.role === "admin" ? "/admin/" : user.role === "teacher" ? "/teacher/" : "/student/") ? (
+          ) : pathname !==
+              (user.role === "admin"
+                ? "/admin"
+                : user.role === "teacher"
+                  ? "/teacher"
+                  : "/student") &&
+            pathname !==
+              (user.role === "admin"
+                ? "/admin/"
+                : user.role === "teacher"
+                  ? "/teacher/"
+                  : "/student/") ? (
             <Button
               asChild
               variant="secondary"
               size="sm"
               className="gap-1.5 rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground font-semibold transition-all duration-200"
             >
-              <Link to={user.role === "admin" ? "/admin" : user.role === "teacher" ? "/teacher" : "/student"}>
+              <Link
+                to={
+                  user.role === "admin"
+                    ? "/admin"
+                    : user.role === "teacher"
+                      ? "/teacher"
+                      : "/student"
+                }
+              >
                 <ArrowLeft className="h-3.5 w-3.5" />
                 <span className="text-xs">Back to Apps</span>
               </Link>
@@ -238,7 +297,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             variant="ghost"
             size="icon"
             className="relative"
-            onClick={() => nav({ to: user.role === "teacher" ? "/teacher/messages" : user.role === "admin" ? "/admin/messages" : "/student/messages" })}
+            onClick={() =>
+              nav({
+                to:
+                  user.role === "teacher"
+                    ? "/teacher/messages"
+                    : user.role === "admin"
+                      ? "/admin/messages"
+                      : "/student/messages",
+              })
+            }
           >
             <MessageSquare className="h-4 w-4" />
             {unreadMsgs > 0 && (
@@ -293,7 +361,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                         )}
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium">{n.title}</div>
-                          <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">{n.message}</div>
+                          <div className="text-xs text-muted-foreground line-clamp-2 mt-0.5">
+                            {n.message}
+                          </div>
                           <div className="text-[10px] text-muted-foreground/70 mt-1">
                             {new Date(n.createdAt).toLocaleString()}
                           </div>
@@ -312,19 +382,30 @@ export function AppShell({ children }: { children: ReactNode }) {
               <button className="ml-1 flex items-center gap-2 rounded-lg pl-1 pr-3 py-1 hover:bg-secondary/60 transition-colors duration-150">
                 <Avatar className="h-8 w-8 ring-2 ring-primary/35 ring-offset-1 ring-offset-background">
                   <AvatarFallback className="bg-primary/15 text-primary text-xs font-bold">
-                    {user.name.split(" ").map((s) => s[0]).slice(0, 2).join("")}
+                    {user.name
+                      .split(" ")
+                      .map((s) => s[0])
+                      .slice(0, 2)
+                      .join("")}
                   </AvatarFallback>
                 </Avatar>
                 <div className="hidden sm:block text-left leading-tight">
                   <div className="text-xs font-semibold">{user.name}</div>
-                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{user.role}</div>
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {user.role}
+                  </div>
                 </div>
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48 shadow-card z-50">
-              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">{user.email}</DropdownMenuLabel>
+              <DropdownMenuLabel className="text-xs text-muted-foreground font-normal">
+                {user.email}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive focus:bg-destructive/10">
+              <DropdownMenuItem
+                onClick={handleLogout}
+                className="text-destructive focus:text-destructive focus:bg-destructive/10"
+              >
                 <LogOut className="mr-2 h-4 w-4" /> Log out
               </DropdownMenuItem>
             </DropdownMenuContent>

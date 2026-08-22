@@ -15,15 +15,34 @@ export function VerifyModal({ open, onClose }: { open: boolean; onClose: () => v
   const [certData, setCertData] = useState<any>(null);
 
   const submit = async () => {
-    if (id.trim().length < 3) return;
+    const cleanId = id.trim();
+    if (cleanId.length < 3) return;
     setStatus("verifying");
     setCertData(null);
 
-    await new Promise((r) => window.setTimeout(r, 600));
+    // 1. Query public server API
+    try {
+      const res = await fetch(`/api/certificates/verify?id=${encodeURIComponent(cleanId)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.ok && data.certificate) {
+          const c = data.certificate;
+          setCertData({
+            certificateId: c.id,
+            studentName: c.studentName || "Student",
+            courseName: c.courseName || "Course",
+            score: c.score ?? null,
+            issuedAt: c.issuedAt || new Date().toISOString(),
+          });
+          setStatus("found");
+          return;
+        }
+      }
+    } catch (_) {}
 
-    const cleanId = id.trim().toLowerCase();
+    // 2. Fallback to in-memory store
     const cert = certificates.find(
-      (c) => c && c.id && c.id.toLowerCase() === cleanId && c.status === "approved"
+      (c) => c && c.id && c.id.trim().toLowerCase() === cleanId.toLowerCase() && c.status === "approved",
     );
 
     if (cert) {
@@ -82,7 +101,9 @@ export function VerifyModal({ open, onClose }: { open: boolean; onClose: () => v
             </button>
 
             <span className="data-chip text-primary">TERMINAL // CERT-VERIFY</span>
-            <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">Verify a certificate</h2>
+            <h2 className="mt-4 text-xl font-bold tracking-tight text-foreground">
+              Verify a certificate
+            </h2>
             <p className="mt-1.5 text-xs text-muted-foreground">
               Enter the certificate ID printed on the credential (e.g. ITECH-2026-0001).
             </p>
@@ -141,9 +162,7 @@ export function VerifyModal({ open, onClose }: { open: boolean; onClose: () => v
                     >
                       <Check className="h-3.5 w-3.5" />
                     </motion.span>
-                    <span
-                      className="font-mono text-[11px] uppercase tracking-[0.18em] font-bold text-emerald-500"
-                    >
+                    <span className="font-mono text-[11px] uppercase tracking-[0.18em] font-bold text-emerald-500">
                       Certificate verified · {certData.certificateId}
                     </span>
                   </div>

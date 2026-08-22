@@ -31,5 +31,9 @@ function TeacherLayout() {
   }
 
   if (!user || user.isEmailVerified === false || user.role !== "teacher") return null;
-  return <AppShell><Outlet /></AppShell>;
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
 }

@@ -86,13 +86,15 @@ function VerifyEmailPage() {
         className="relative w-full max-w-md space-y-6"
       >
         <div className="text-center space-y-4">
-          <div className="inline-flex"><Logo /></div>
+          <div className="inline-flex">
+            <Logo />
+          </div>
           <h1 className="text-3xl font-bold tracking-tight">Verify Your Email</h1>
           <p className="text-sm text-muted-foreground">
-            We sent a verification code to <span className="text-foreground font-semibold">{user.email}</span>.
+            We sent a verification code to{" "}
+            <span className="text-foreground font-semibold">{user.email}</span>.
           </p>
         </div>
-
 
         <form onSubmit={handleSubmit} className="glass rounded-2xl p-6 space-y-5">
           <div className="space-y-2">
@@ -126,7 +128,10 @@ function VerifyEmailPage() {
             </div>
           )}
 
-          <Button type="submit" className="w-full h-11 gradient-primary text-primary-foreground border-0 glow">
+          <Button
+            type="submit"
+            className="w-full h-11 gradient-primary text-primary-foreground border-0 glow"
+          >
             Verify Code
           </Button>
 

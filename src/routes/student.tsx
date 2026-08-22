@@ -42,5 +42,9 @@ function StudentLayout() {
   if (!user || user.isEmailVerified === false) return null;
   if (isStudentRoute && user.role !== "student" && !isTeacherOrAdminPreview) return null;
 
-  return <AppShell><Outlet /></AppShell>;
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
 }

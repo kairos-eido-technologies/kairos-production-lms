@@ -19,8 +19,10 @@ const NAV_PILL =
 export function Nav({ user, onVerify }: { user: any; onVerify: () => void }) {
   const { theme, toggle } = useTheme();
   const [scrolled, setScrolled] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const onScroll = () => setScrolled(window.scrollY > 24);
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
@@ -30,7 +32,9 @@ export function Nav({ user, onVerify }: { user: any; onVerify: () => void }) {
   return (
     <header
       className={`fixed inset-x-0 top-0 z-50 transition-all duration-500 ${
-        scrolled ? "panel border-b border-border/40 bg-background/85 backdrop-blur-2xl py-1" : "bg-transparent py-2"
+        scrolled
+          ? "panel border-b border-border/40 bg-background/85 backdrop-blur-2xl py-1"
+          : "bg-transparent py-2"
       }`}
     >
       <nav className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-6">
@@ -52,15 +56,12 @@ export function Nav({ user, onVerify }: { user: any; onVerify: () => void }) {
 
         <div className="flex items-center gap-2">
           {/* Verify Cert — pill button */}
-          <button
-            onClick={onVerify}
-            className={`${NAV_PILL} hidden sm:inline-flex`}
-          >
+          <button onClick={onVerify} className={`${NAV_PILL} hidden sm:inline-flex`}>
             <ShieldCheck className="h-3.5 w-3.5 text-primary" />
             Verify Cert
           </button>
 
-          {user ? (
+          {mounted && user ? (
             <Button
               asChild
               size="sm"
@@ -71,11 +72,7 @@ export function Nav({ user, onVerify }: { user: any; onVerify: () => void }) {
           ) : (
             <>
               {/* Sign In — same pill style */}
-              <Link
-                to="/login"
-                search={{ mode: "login" }}
-                className={NAV_PILL}
-              >
+              <Link to="/login" search={{ mode: "login" }} className={NAV_PILL}>
                 <LogIn className="h-3.5 w-3.5" />
                 Sign In
               </Link>
@@ -85,7 +82,9 @@ export function Nav({ user, onVerify }: { user: any; onVerify: () => void }) {
                 size="sm"
                 className="gradient-primary text-primary-foreground border-0 glow h-8 text-xs px-4 rounded-lg"
               >
-                <Link to="/login" search={{ mode: "signup" }}>Get Started</Link>
+                <Link to="/login" search={{ mode: "signup" }}>
+                  Get Started
+                </Link>
               </Button>
             </>
           )}

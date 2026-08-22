@@ -9,13 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useAuth } from "@/lib/store";
-import { useData, courseProgressPct, isCourseExpired, studentAccessFor, type StoreAssessment, type VideoCheckpoint, type CheckpointProgress } from "@/lib/data-store";
+import { useData, courseProgressPct, submissionScore, isCourseExpired, studentAccessFor, type StoreAssessment, type VideoCheckpoint, type CheckpointProgress } from "@/lib/data-store";
 import type { ContentItem, ContentType } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { ClipboardCheck, ChevronDown, Layers } from "lucide-react";
 import { SecurePdfViewer } from "@/components/SecurePdfViewer";
 import { SecurePptViewer } from "@/components/SecurePptViewer";
-import { sanitizeHtml } from "@/lib/sanitize";
+import { sanitizeHtml, formatReadingHtml } from "@/lib/sanitize";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -40,16 +40,47 @@ const typeMeta: Record<ContentType, { icon: any; label: string }> = {
   assessment: { icon: ClipboardList, label: "Assignment / Quiz" },
 };
 
-function toYouTubeEmbed(url: string): string | null {
+function extractYouTubeVideoId(url?: string | null): string | null {
+  if (!url || typeof url !== "string") return null;
+  const clean = url.trim();
+
+  // Direct 11-char ID
+  if (/^[a-zA-Z0-9_-]{11}$/.test(clean)) {
+    return clean;
+  }
+
+  // Regex for YouTube URLs (watch, embed, shorts, live, youtu.be, etc.)
+  const regex = /(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/|live\/))([a-zA-Z0-9_-]{11})/;
+  const match = clean.match(regex);
+  if (match && match[1]) {
+    return match[1];
+  }
+
   try {
-    const u = new URL(url);
+    const withProto = clean.startsWith("http://") || clean.startsWith("https://")
+      ? clean
+      : `https://${clean}`;
+    const u = new URL(withProto);
     if (u.hostname.includes("youtube.com")) {
       const v = u.searchParams.get("v");
-      if (v) return `https://www.youtube.com/embed/${v}`;
+      if (v && v.length === 11) return v;
+      const parts = u.pathname.split("/").filter(Boolean);
+      if (["embed", "v", "shorts", "live"].includes(parts[0]) && parts[1]) {
+        return parts[1].slice(0, 11);
+      }
     }
-    if (u.hostname === "youtu.be") return `https://www.youtube.com/embed${u.pathname}`;
-    return null;
-  } catch { return null; }
+    if (u.hostname.includes("youtu.be")) {
+      const id = u.pathname.slice(1).split("/")[0].split("?")[0];
+      if (id && id.length === 11) return id;
+    }
+  } catch (e) {}
+
+  return null;
+}
+
+function toYouTubeEmbed(url?: string | null): string | null {
+  const id = extractYouTubeVideoId(url);
+  return id ? `https://www.youtube.com/embed/${id}` : null;
 }
 
 function CourseLearning() {
@@ -62,6 +93,110 @@ function CourseLearning() {
   const [activeTab, setActiveTab] = useState<"content" | "announcements" | "discussion" | "final">("content");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // All React Hooks must be declared before any early returns to satisfy Rules of Hooks
+  const done = useMemo(() => {
+    if (!user || !course) return new Set<string>();
+    const baseProgressSet = new Set(progress[`${user.id}:${course.id}`] ?? []);
+
+    // For assessment items: verify whether the student actually passed
+    course.sections.forEach((s) => {
+      s.items.forEach((it) => {
+        if (it.type === "assessment") {
+          const linked =
+            (it.assessmentId ? assessments.find((a) => a.id === it.assessmentId) : null) ||
+            assessments.find(
+              (a) =>
+                a.courseId === course.id &&
+                (a.title.trim().toLowerCase() === it.title.trim().toLowerCase() ||
+                  (it.title.toLowerCase().includes("final") && a.isFinal)),
+            );
+          if (linked) {
+            const mySubs = submissions.filter(
+              (sub) => sub.studentId === user.id && sub.assessmentId === linked.id,
+            );
+            const hasPassed = mySubs.some(
+              (sub) => sub.status === "graded" && submissionScore(linked, sub).pct >= linked.passingScore,
+            );
+            if (hasPassed) {
+              baseProgressSet.add(it.id);
+            } else {
+              baseProgressSet.delete(it.id);
+            }
+          }
+        }
+      });
+    });
+
+    return baseProgressSet;
+  }, [progress, user?.id, course, assessments, submissions]);
+
+  const allItems = useMemo(() => {
+    if (!course) return [];
+    return course.sections.flatMap((s) => s.items);
+  }, [course?.sections]);
+
+  const isInstructorOrAdmin =
+    user ? user.role === "admin" || user.role === "teacher" || course?.teacherId === user.id : false;
+
+  const isSequentialLocked =
+    !isInstructorOrAdmin &&
+    Boolean(course?.lockProgression ?? course?.sequentialProgression ?? false);
+
+  const unlockedItemIds = useMemo(() => {
+    const set = new Set<string>();
+    if (!isSequentialLocked) {
+      allItems.forEach((it) => set.add(it.id));
+      return set;
+    }
+    if (allItems.length > 0) {
+      set.add(allItems[0].id);
+    }
+    for (let i = 0; i < allItems.length; i++) {
+      const current = allItems[i];
+      if (done.has(current.id)) {
+        set.add(current.id);
+        if (i + 1 < allItems.length) {
+          set.add(allItems[i + 1].id);
+        }
+      }
+    }
+    return set;
+  }, [allItems, done, isSequentialLocked]);
+
+  const active: ContentItem | null = useMemo(() => {
+    if (activeId && allItems.some((i) => i.id === activeId)) {
+      const found = allItems.find((i) => i.id === activeId) ?? null;
+      if (found && (!isSequentialLocked || unlockedItemIds.has(found.id))) {
+        return found;
+      }
+    }
+    if (isSequentialLocked && allItems.length > 0) {
+      return (
+        allItems.find((i) => unlockedItemIds.has(i.id) && !done.has(i.id)) ||
+        allItems.find((i) => unlockedItemIds.has(i.id)) ||
+        allItems[0] ||
+        null
+      );
+    }
+    return allItems[0] ?? null;
+  }, [activeId, allItems, isSequentialLocked, unlockedItemIds, done]);
+
+  const pct = useMemo(() => {
+    if (!user || !course) return 0;
+    return courseProgressPct(progress, user.id, course);
+  }, [progress, user?.id, course]);
+
+  const currentIndex = useMemo(() => (active ? allItems.findIndex((i) => i.id === active.id) : -1), [active, allItems]);
+  const prevItem = useMemo(() => (currentIndex > 0 ? allItems[currentIndex - 1] : null), [currentIndex, allItems]);
+  const nextItem = useMemo(
+    () => (currentIndex >= 0 && currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null),
+    [currentIndex, allItems]
+  );
+  const isNextUnlocked = useMemo(() => {
+    if (!nextItem) return true;
+    return !isSequentialLocked || unlockedItemIds.has(nextItem.id);
+  }, [nextItem, isSequentialLocked, unlockedItemIds]);
+
   if (!user) return null;
   if (!course) {
     return (
@@ -71,7 +206,6 @@ function CourseLearning() {
       </div>
     );
   }
-  const isInstructorOrAdmin = user.role === "admin" || user.role === "teacher" || course.teacherId === user.id;
   if (!course.studentIds.includes(user.id) && !isInstructorOrAdmin) {
     return (
       <div className="space-y-4">
@@ -99,14 +233,6 @@ function CourseLearning() {
     );
   }
 
-  const done = useMemo(() => new Set(progress[`${user.id}:${course.id}`] ?? []), [progress, user.id, course.id]);
-  const allItems = useMemo(() => course.sections.flatMap((s) => s.items), [course.sections]);
-  const active: ContentItem | null = useMemo(
-    () => (activeId ? allItems.find((i) => i.id === activeId) ?? null : allItems[0] ?? null),
-    [activeId, allItems]
-  );
-  const pct = useMemo(() => courseProgressPct(progress, user.id, course), [progress, user.id, course]);
-
   const toggle = (id: string) => {
     if (done.has(id)) { unmarkItemComplete(user.id, course.id, id); }
     else { markItemComplete(user.id, course.id, id); toast.success("Marked complete"); }
@@ -115,16 +241,16 @@ function CourseLearning() {
   const autoComplete = (id: string) => {
     if (!done.has(id)) {
       markItemComplete(user.id, course.id, id);
-      toast.success("🎉 Lesson completed! Progress updated.", { duration: 3000 });
+      const isLast = currentIndex === allItems.length - 1;
+      if (isLast) {
+        toast.success("🎉 All course lessons completed! Final Test unlocked.", { duration: 4000 });
+      } else if (isSequentialLocked) {
+        toast.success("🎉 Lesson completed! Next lesson is now unlocked.", { duration: 3500 });
+      } else {
+        toast.success("🎉 Lesson completed! Progress updated.", { duration: 3000 });
+      }
     }
   };
-
-  const currentIndex = useMemo(() => (active ? allItems.findIndex((i) => i.id === active.id) : -1), [active, allItems]);
-  const prevItem = useMemo(() => (currentIndex > 0 ? allItems[currentIndex - 1] : null), [currentIndex, allItems]);
-  const nextItem = useMemo(
-    () => (currentIndex >= 0 && currentIndex < allItems.length - 1 ? allItems[currentIndex + 1] : null),
-    [currentIndex, allItems]
-  );
 
   const fromSource = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("from") : null;
   const baseContentPath = user.role === "admin" ? "/admin/content" : "/teacher/content";
@@ -215,42 +341,79 @@ function CourseLearning() {
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
 
-              {course.sections.map((sec) => (
-                <DropdownMenuGroup key={sec.id} className="py-1">
-                  <div className="px-2 py-1 text-[11px] font-semibold text-primary uppercase tracking-wider bg-secondary/40 rounded-md my-0.5">
-                    {sec.title}
-                  </div>
-                  {sec.items.map((it) => {
-                    const M = typeMeta[it.type] || { icon: FileText, label: it.type || "Content" };
-                    const Icon = M.icon || FileText;
-                    const isDone = done.has(it.id);
-                    const isActive = active.id === it.id;
-                    return (
-                      <DropdownMenuItem
-                        key={it.id}
-                        onClick={() => setActiveId(it.id)}
-                        className={`flex items-center gap-2 px-2.5 py-2 text-xs rounded-lg cursor-pointer my-0.5 ${isActive
-                            ? "bg-primary/15 font-semibold text-primary"
-                            : "hover:bg-secondary/50 text-foreground"
+              {course.sections.map((sec) => {
+                const isSectionUnlocked =
+                  !isSequentialLocked ||
+                  sec.items.length === 0 ||
+                  sec.items.some((it) => unlockedItemIds.has(it.id));
+
+                return (
+                  <DropdownMenuGroup key={sec.id} className="py-1">
+                    <div
+                      className={`px-2 py-1 text-[11px] font-semibold uppercase tracking-wider rounded-md my-0.5 flex items-center justify-between ${
+                        isSectionUnlocked
+                          ? "text-primary bg-secondary/40"
+                          : "text-muted-foreground/60 bg-secondary/20"
+                      }`}
+                    >
+                      <span>{sec.title}</span>
+                      {!isSectionUnlocked && (
+                        <span className="text-[10px] font-normal flex items-center gap-1 text-muted-foreground/70">
+                          <LockKeyhole className="h-3 w-3" /> Locked
+                        </span>
+                      )}
+                    </div>
+                    {sec.items.map((it) => {
+                      const M = typeMeta[it.type] || { icon: FileText, label: it.type || "Content" };
+                      const Icon = M.icon || FileText;
+                      const isDone = done.has(it.id);
+                      const isActive = active?.id === it.id;
+                      const isUnlocked = unlockedItemIds.has(it.id);
+
+                      return (
+                        <DropdownMenuItem
+                          key={it.id}
+                          disabled={!isUnlocked}
+                          onClick={() => {
+                            if (!isUnlocked) {
+                              toast.error("🔒 Complete previous lessons to unlock this content.");
+                              return;
+                            }
+                            setActiveId(it.id);
+                          }}
+                          className={`flex items-center gap-2 px-2.5 py-2 text-xs rounded-lg my-0.5 transition-colors ${
+                            !isUnlocked
+                              ? "opacity-50 cursor-not-allowed text-muted-foreground bg-secondary/10"
+                              : isActive
+                              ? "bg-primary/15 font-semibold text-primary cursor-pointer"
+                              : "hover:bg-secondary/50 text-foreground cursor-pointer"
                           }`}
-                      >
-                        {isDone ? (
-                          <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
-                        ) : (
-                          <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
-                        )}
-                        <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                        <span className="truncate flex-1">{it.title}</span>
-                        {isActive && (
-                          <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/20 text-primary border-0 font-medium">
-                            Active
-                          </Badge>
-                        )}
-                      </DropdownMenuItem>
-                    );
-                  })}
-                </DropdownMenuGroup>
-              ))}
+                        >
+                          {isDone ? (
+                            <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                          ) : !isUnlocked ? (
+                            <LockKeyhole className="h-4 w-4 text-muted-foreground/60 shrink-0" />
+                          ) : (
+                            <Circle className="h-4 w-4 text-muted-foreground/40 shrink-0" />
+                          )}
+                          <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <span className="truncate flex-1">{it.title}</span>
+                          {isActive && (
+                            <Badge variant="secondary" className="text-[9px] h-4 px-1.5 bg-primary/20 text-primary border-0 font-medium">
+                              Active
+                            </Badge>
+                          )}
+                          {!isUnlocked && (
+                            <Badge variant="outline" className="text-[9px] h-4 px-1.5 border-border/80 text-muted-foreground font-normal">
+                              Locked
+                            </Badge>
+                          )}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuGroup>
+                );
+              })}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
@@ -276,25 +439,39 @@ function CourseLearning() {
                   prevItem={prevItem}
                   nextItem={nextItem}
                   onNavigate={setActiveId}
+                  isSequentialLocked={isSequentialLocked}
+                  isNextUnlocked={isNextUnlocked}
                 />
                 
                 {/* Course Completed Congratulatory Banner */}
-                {pct >= 100 && (
-                  <div className="mx-4 mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3 text-emerald-600 dark:text-emerald-400">
-                    <div className="flex items-center gap-2.5">
-                      <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-                      <div>
-                        <div className="font-bold text-sm">Congratulations! All course lessons completed.</div>
-                        <div className="text-xs text-muted-foreground">Your Final Test is unlocked and ready to take.</div>
+                {(() => {
+                  const prereqItems = allItems.filter((i) => {
+                    const isThisFinal = i.assessmentId && assessments.find((ca) => ca.id === i.assessmentId)?.isFinal;
+                    const isFinalByName = i.type === "assessment" && i.title.toLowerCase().includes("final");
+                    return !isThisFinal && !isFinalByName;
+                  });
+                  const isReadyForFinal = prereqItems.length > 0 && prereqItems.every((i) => done.has(i.id));
+
+                  if (pct >= 100 || isReadyForFinal) {
+                    return (
+                      <div className="mx-4 mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex flex-wrap items-center justify-between gap-3 text-emerald-600 dark:text-emerald-400">
+                        <div className="flex items-center gap-2.5">
+                          <CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+                          <div>
+                            <div className="font-bold text-sm">Congratulations! All course lessons completed.</div>
+                            <div className="text-xs text-muted-foreground">Your Final Test is unlocked and ready to take.</div>
+                          </div>
+                        </div>
+                        {assessments.some((a) => a.courseId === course.id) && (
+                          <Button size="sm" onClick={() => setActiveTab("final")} className="bg-emerald-600 text-white hover:bg-emerald-700 border-0 text-xs font-semibold cursor-pointer">
+                            Take Final Test <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                        )}
                       </div>
-                    </div>
-                    {assessments.some((a) => a.courseId === course.id) && (
-                      <Button size="sm" onClick={() => setActiveTab("final")} className="bg-emerald-600 text-white hover:bg-emerald-700 border-0 text-xs font-semibold">
-                        Take Final Test <ChevronRight className="h-3.5 w-3.5 ml-1" />
-                      </Button>
-                    )}
-                  </div>
-                )}
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             ) : null
           )}
@@ -319,8 +496,12 @@ function CourseLearning() {
 
               {(() => {
                 const courseAssessments = assessments.filter((a) => a.courseId === course.id);
-                const lessonItems = allItems.filter((i) => i.type !== "assessment");
-                const courseComplete = pct >= 100 || (lessonItems.length > 0 ? lessonItems.every((i) => done.has(i.id)) : done.size >= allItems.length);
+                const prereqItems = allItems.filter((i) => {
+                  const isThisFinal = i.assessmentId && courseAssessments.find((ca) => ca.id === i.assessmentId)?.isFinal;
+                  const isFinalByName = i.type === "assessment" && i.title.toLowerCase().includes("final");
+                  return !isThisFinal && !isFinalByName;
+                });
+                const courseComplete = prereqItems.length === 0 || prereqItems.every((i) => done.has(i.id)) || pct >= 100;
 
                 if (courseAssessments.length === 0) {
                   return <div className="text-sm text-muted-foreground py-8 text-center">No assessments created for this course.</div>;
@@ -413,6 +594,7 @@ function CheckpointVideoPlayer({
   onComplete?: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
   const [activeCheckpoint, setActiveCheckpoint] = useState<VideoCheckpoint | null>(null);
   const [selectedMCQ, setSelectedMCQ] = useState<number | null>(null);
   const [userAnswer, setUserAnswer] = useState("");
@@ -461,19 +643,143 @@ function CheckpointVideoPlayer({
 
   const embed = toYouTubeEmbed(url);
 
+  // Helper functions to control both YouTube iframe and HTML5 video
+  const pauseVideo = () => {
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === "function") {
+      try { ytPlayerRef.current.pauseVideo(); } catch (e) {}
+    }
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: "command", func: "pauseVideo", args: [] }),
+        "*"
+      );
+    }
+    if (videoRef.current) {
+      try { videoRef.current.pause(); } catch (e) {}
+    }
+  };
+
+  const playVideo = () => {
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === "function") {
+      try { ytPlayerRef.current.playVideo(); } catch (e) {}
+    }
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: "command", func: "playVideo", args: [] }),
+        "*"
+      );
+    }
+    if (videoRef.current) {
+      videoRef.current.play().catch(() => {});
+    }
+  };
+
+  const seekVideoTo = (time: number) => {
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === "function") {
+      try { ytPlayerRef.current.seekTo(time, true); } catch (e) {}
+    }
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: "command", func: "seekTo", args: [time, true] }),
+        "*"
+      );
+    }
+    if (videoRef.current) {
+      videoRef.current.currentTime = time;
+    }
+  };
+
+  // Centralized checkpoint trigger check
+  const checkCheckpointAtTime = (currentTimeVal: number) => {
+    if (activeCheckpointRef.current) return;
+    if (typeof currentTimeVal !== "number" || isNaN(currentTimeVal)) return;
+
+    // 1. Check if user crossed or reached any unsolved checkpoint
+    const crossedCheckpoint = checkpointsRef.current.find(
+      (cp) => !answeredCheckpointsRef.current.has(cp.id) &&
+        (
+          (lastTimeRef.current <= cp.timestamp && currentTimeVal >= cp.timestamp) ||
+          Math.abs(currentTimeVal - cp.timestamp) <= 1.2
+        )
+    );
+
+    // 2. Check if student skipped far ahead past an unsolved checkpoint
+    const earliestUnsolved = checkpointsRef.current
+      .filter((cp) => !answeredCheckpointsRef.current.has(cp.id))
+      .sort((a, b) => a.timestamp - b.timestamp)[0];
+
+    if (earliestUnsolved && currentTimeVal > earliestUnsolved.timestamp + 2.5) {
+      pauseVideo();
+      seekVideoTo(earliestUnsolved.timestamp);
+      toast.warning("Checkpoint question required before proceeding.");
+      setActiveCheckpoint(earliestUnsolved);
+      setSelectedMCQ(null);
+      setUserAnswer("");
+      setCorrectFeedback(null);
+      return;
+    }
+
+    if (crossedCheckpoint) {
+      pauseVideo();
+      seekVideoTo(crossedCheckpoint.timestamp);
+      setActiveCheckpoint(crossedCheckpoint);
+      setSelectedMCQ(null);
+      setUserAnswer("");
+      setCorrectFeedback(null);
+      return;
+    }
+
+    lastTimeRef.current = currentTimeVal;
+  };
+
   // YouTube API script loader
   useEffect(() => {
-    if (embed) {
-      if (typeof window !== "undefined" && !(window as any).YT) {
-        const tag = document.createElement("script");
-        tag.src = "https://www.youtube.com/iframe_api";
-        const firstScriptTag = document.getElementsByTagName("script")[0];
-        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
-      }
+    if (embed && typeof window !== "undefined" && !(window as any).YT) {
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName("script")[0];
+      firstScriptTag?.parentNode?.insertBefore(tag, firstScriptTag);
     }
   }, [embed]);
 
-  // YouTube Player Initializer
+  // YouTube PostMessage Listener (Instant & 100% Reliable for all browsers)
+  useEffect(() => {
+    if (!embed) return;
+
+    const pingIframe = () => {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: "listening" }),
+          "*"
+        );
+      }
+    };
+    const pingTimer = setInterval(pingIframe, 1000);
+
+    const handleWindowMessage = (event: MessageEvent) => {
+      try {
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (!data) return;
+
+        if (data.event === "infoDelivery" && data.info) {
+          if (typeof data.info.currentTime === "number") {
+            checkCheckpointAtTime(data.info.currentTime);
+          }
+          if (data.info.playerState === 0) {
+            handleVideoEnded();
+          }
+        }
+      } catch (err) {}
+    };
+
+    window.addEventListener("message", handleWindowMessage);
+    return () => {
+      clearInterval(pingTimer);
+      window.removeEventListener("message", handleWindowMessage);
+    };
+  }, [embed]);
+
+  // YouTube Player Initializer (API Method)
   useEffect(() => {
     if (!embed) return;
 
@@ -481,42 +787,33 @@ function CheckpointVideoPlayer({
     let checkInterval: any = null;
 
     const initPlayer = () => {
-      if (!(window as any).YT || !(window as any).YT.Player) {
-        checkInterval = setTimeout(initPlayer, 100);
+      if (!iframeRef.current) {
+        checkInterval = setTimeout(initPlayer, 150);
         return;
       }
 
-      let videoId = "";
-      try {
-        const u = new URL(url);
-        if (u.hostname.includes("youtube.com")) {
-          videoId = u.searchParams.get("v") || "";
-        } else if (u.hostname === "youtu.be") {
-          videoId = u.pathname.slice(1);
-        } else if (u.pathname.includes("/embed/")) {
-          videoId = u.pathname.split("/embed/")[1];
-        }
-      } catch {
-        const match = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([^#\&\?]+)/);
-        videoId = match ? match[1] : "";
+      if (!(window as any).YT || !(window as any).YT.Player) {
+        checkInterval = setTimeout(initPlayer, 150);
+        return;
       }
 
-      if (!videoId) return;
-
-      playerInstance = new (window as any).YT.Player("yt-player", {
-        height: "100%",
-        width: "100%",
-        videoId: videoId,
-        playerVars: {
-          autoplay: 0,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1,
-        },
-      });
-
-      ytPlayerRef.current = playerInstance;
-      setYtPlayer(playerInstance);
+      try {
+        playerInstance = new (window as any).YT.Player(iframeRef.current, {
+          events: {
+            onReady: (event: any) => {
+              ytPlayerRef.current = event.target;
+              setYtPlayer(event.target);
+            },
+            onStateChange: (event: any) => {
+              if (event.data === (window as any).YT?.PlayerState?.ENDED) {
+                handleVideoEnded();
+              }
+            },
+          },
+        });
+      } catch (e) {
+        // Fallback gracefully
+      }
     };
 
     initPlayer();
@@ -524,91 +821,44 @@ function CheckpointVideoPlayer({
     return () => {
       if (checkInterval) clearTimeout(checkInterval);
       if (playerInstance && playerInstance.destroy) {
-        playerInstance.destroy();
+        try {
+          playerInstance.destroy();
+        } catch (e) {}
       }
     };
   }, [embed, url]);
 
   // YouTube Periodic Check Interval
   useEffect(() => {
-    if (!embed || !ytPlayer) return;
+    if (!embed) return;
 
     const interval = setInterval(() => {
-      if (typeof ytPlayer.getCurrentTime !== "function") return;
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.getCurrentTime === "function") {
+        try {
+          const currentTimeVal = ytPlayerRef.current.getCurrentTime();
+          checkCheckpointAtTime(currentTimeVal);
 
-      const currentTimeVal = ytPlayer.getCurrentTime();
-
-      // Check if we crossed any checkpoint since last time update
-      const crossedCheckpoint = checkpointsRef.current.find(
-        (cp) => !answeredCheckpointsRef.current.has(cp.id) &&
-          lastTimeRef.current < cp.timestamp &&
-          currentTimeVal >= cp.timestamp
-      );
-
-      if (crossedCheckpoint) {
-        // Pause and show checkpoint
-        if (currentTimeVal > lastTimeRef.current + 2.5) {
-          // Skip detected - snap back to checkpoint time
-          ytPlayer.seekTo(crossedCheckpoint.timestamp, true);
-          toast.warning("You must answer the checkpoint question before proceeding.");
-        }
-        ytPlayer.pauseVideo();
-        if (!activeCheckpointRef.current || activeCheckpointRef.current.id !== crossedCheckpoint.id) {
-          setActiveCheckpoint(crossedCheckpoint);
-          setSelectedMCQ(null);
-          setUserAnswer("");
-          setCorrectFeedback(null);
-        }
-      } else {
-        lastTimeRef.current = currentTimeVal;
-
-        // Auto-complete check for YouTube: >= 90% watched + all checkpoints answered
-        const totalDur = typeof ytPlayer.getDuration === "function" ? ytPlayer.getDuration() : 0;
-        const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
-        if (totalDur > 0 && currentTimeVal / totalDur >= 0.90 && allCheckpointsSolved) {
-          onComplete?.();
-        }
+          const totalDur = typeof ytPlayerRef.current.getDuration === "function" ? ytPlayerRef.current.getDuration() : 0;
+          const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
+          if (totalDur > 0 && currentTimeVal / totalDur >= 0.90 && allCheckpointsSolved) {
+            onComplete?.();
+          }
+        } catch (e) {}
       }
     }, 250);
 
     return () => clearInterval(interval);
-  }, [embed, ytPlayer, onComplete]);
+  }, [embed, onComplete]);
 
   // Native Video Time Update handler
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
-    const currentTimeVal = videoRef.current.currentTime;
+    checkCheckpointAtTime(videoRef.current.currentTime);
 
-    // Check if we crossed any checkpoint since last time update
-    const crossedCheckpoint = checkpointsRef.current.find(
-      (cp) => !answeredCheckpointsRef.current.has(cp.id) &&
-        lastTimeRef.current < cp.timestamp &&
-        currentTimeVal >= cp.timestamp
-    );
-
-    if (crossedCheckpoint) {
-      // Pause and show checkpoint
-      if (currentTimeVal > lastTimeRef.current + 2.5) {
-        // Skip detected - snap back to checkpoint time
-        videoRef.current.currentTime = crossedCheckpoint.timestamp;
-        toast.warning("You must answer the checkpoint question before proceeding.");
-      }
-      videoRef.current.pause();
-      if (!activeCheckpointRef.current || activeCheckpointRef.current.id !== crossedCheckpoint.id) {
-        setActiveCheckpoint(crossedCheckpoint);
-        setSelectedMCQ(null);
-        setUserAnswer("");
-        setCorrectFeedback(null);
-      }
-    } else {
-      lastTimeRef.current = currentTimeVal;
-
-      // Auto-complete check for Native Video: >= 90% watched + all checkpoints answered
-      const totalDur = videoRef.current.duration || 0;
-      const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
-      if (totalDur > 0 && currentTimeVal / totalDur >= 0.90 && allCheckpointsSolved) {
-        onComplete?.();
-      }
+    const totalDur = videoRef.current.duration || 0;
+    const allCheckpointsSolved = checkpointsRef.current.every((cp) => answeredCheckpointsRef.current.has(cp.id));
+    if (totalDur > 0 && videoRef.current.currentTime / totalDur >= 0.90 && allCheckpointsSolved) {
+      onComplete?.();
     }
   };
 
@@ -643,11 +893,7 @@ function CheckpointVideoPlayer({
         setSelectedMCQ(null);
         setUserAnswer("");
         setCorrectFeedback(null);
-        if (embed && ytPlayer && typeof ytPlayer.playVideo === "function") {
-          ytPlayer.playVideo();
-        } else if (videoRef.current) {
-          videoRef.current.play().catch(console.error);
-        }
+        playVideo();
       }, 1000);
     } else {
       toast.error("Incorrect. Review the lesson material and try again.");
@@ -659,11 +905,7 @@ function CheckpointVideoPlayer({
     setSelectedMCQ(null);
     setUserAnswer("");
     setCorrectFeedback(null);
-    if (embed && ytPlayer && typeof ytPlayer.playVideo === "function") {
-      ytPlayer.playVideo();
-    } else if (videoRef.current) {
-      videoRef.current.play().catch(console.error);
-    }
+    playVideo();
   };
 
   const handleRewind = () => {
@@ -672,13 +914,8 @@ function CheckpointVideoPlayer({
     setUserAnswer("");
     setCorrectFeedback(null);
     const targetTime = Math.max(0, lastTimeRef.current - 10);
-    if (embed && ytPlayer && typeof ytPlayer.seekTo === "function") {
-      ytPlayer.seekTo(targetTime, true);
-      ytPlayer.playVideo();
-    } else if (videoRef.current) {
-      videoRef.current.currentTime = targetTime;
-      videoRef.current.play().catch(console.error);
-    }
+    seekVideoTo(targetTime);
+    playVideo();
   };
 
   const formatTime = (secs: number) => {
@@ -686,6 +923,8 @@ function CheckpointVideoPlayer({
     const s = secs % 60;
     return `${m}:${String(s).padStart(2, '0')}`;
   };
+
+  const origin = typeof window !== "undefined" ? encodeURIComponent(window.location.origin) : "";
 
   return (
     <div key={url} className="relative aspect-video rounded-xl overflow-hidden bg-black border border-border">
@@ -695,7 +934,15 @@ function CheckpointVideoPlayer({
       */}
       <div className={`w-full h-full ${activeCheckpoint ? "pointer-events-none" : ""}`}>
         {embed ? (
-          <div className="w-full h-full" id="yt-player" />
+          <iframe
+            ref={iframeRef}
+            key={embed}
+            src={`${embed}?enablejsapi=1&origin=${origin}&rel=0&modestbranding=1&autoplay=0`}
+            title={title}
+            className="w-full h-full border-0"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowFullScreen
+          />
         ) : (
           <video
             ref={videoRef}
@@ -832,6 +1079,8 @@ function ContentViewer({
   prevItem,
   nextItem,
   onNavigate,
+  isSequentialLocked = false,
+  isNextUnlocked = true,
 }: {
   item: ContentItem;
   assessments: StoreAssessment[];
@@ -842,10 +1091,19 @@ function ContentViewer({
   prevItem: ContentItem | null;
   nextItem: ContentItem | null;
   onNavigate: (id: string) => void;
+  isSequentialLocked?: boolean;
+  isNextUnlocked?: boolean;
 }) {
   const { videoCheckpoints, checkpointProgress, submitCheckpointAnswer } = useData();
   const M = typeMeta[item.type] || { icon: FileText, label: item.type || "Content" };
-  const linkedAssessment = item.assessmentId ? assessments.find((a) => a.id === item.assessmentId) : null;
+  const linkedAssessment =
+    (item.assessmentId ? assessments.find((a) => a.id === item.assessmentId) : null) ||
+    assessments.find(
+      (a) =>
+        a.title.trim().toLowerCase() === item.title.trim().toLowerCase() ||
+        (item.title.toLowerCase().includes("final") && a.isFinal),
+    ) ||
+    null;
 
   const readingRef = useRef<HTMLDivElement>(null);
   const labRef = useRef<HTMLDivElement>(null);
@@ -1023,8 +1281,25 @@ function ContentViewer({
             </Button>
           )}
           {nextItem && (
-            <Button variant="outline" size="sm" onClick={() => onNavigate(nextItem.id)} className="border-border h-9 text-xs cursor-pointer">
-              Next <ChevronRight className="h-4 w-4 ml-1 text-muted-foreground" />
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={isSequentialLocked && !completed && !isNextUnlocked}
+              onClick={() => {
+                if (isSequentialLocked && !completed && !isNextUnlocked) {
+                  toast.error("🔒 Complete this lesson first to unlock the next one.");
+                  return;
+                }
+                onNavigate(nextItem.id);
+              }}
+              className="border-border h-9 text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Next{" "}
+              {isSequentialLocked && !completed && !isNextUnlocked ? (
+                <LockKeyhole className="h-3.5 w-3.5 ml-1 text-amber-500" />
+              ) : (
+                <ChevronRight className="h-4 w-4 ml-1 text-muted-foreground" />
+              )}
             </Button>
           )}
 
@@ -1041,16 +1316,7 @@ function ContentViewer({
             </Badge>
           )}
 
-          {/* Optional manual toggle */}
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggleComplete}
-            className="text-[11px] text-muted-foreground hover:text-foreground h-9 px-2 cursor-pointer"
-            title={completed ? "Mark as Incomplete" : "Mark as Complete"}
-          >
-            {completed ? "Reset" : "Mark done"}
-          </Button>
+
         </div>
       </div>
 
@@ -1089,18 +1355,32 @@ function ContentViewer({
 
       {item.type === "assessment" && (
         linkedAssessment ? (
-          <div key={item.id} className="rounded-xl border border-border bg-secondary/40 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="font-semibold">{linkedAssessment.title}</div>
-                <div className="mt-1 text-xs text-muted-foreground">{linkedAssessment.questions.length} questions · {linkedAssessment.timeLimit} min · Pass {linkedAssessment.passingScore}%</div>
+          <div key={item.id} className="rounded-xl border border-primary/30 bg-primary/5 p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className={`text-[10px] ${linkedAssessment.isFinal ? "border-primary text-primary" : "border-muted-foreground"}`}>
+                    {linkedAssessment.isFinal ? "Final Test" : "Course Assessment"}
+                  </Badge>
+                  <span className="font-bold text-base text-foreground">{linkedAssessment.title}</span>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {linkedAssessment.questions.length} questions · {linkedAssessment.timeLimit} mins time limit · Passing Score {linkedAssessment.passingScore}%
+                </p>
               </div>
-              <Button asChild className="gradient-primary text-primary-foreground border-0">
-                <Link to="/student/assessments/$assessmentId" params={{ assessmentId: linkedAssessment.id }}>Start assignment/quiz</Link>
+              <Button asChild className="gradient-primary text-primary-foreground border-0 shadow-md font-semibold text-xs h-10 px-5 cursor-pointer">
+                <Link to="/student/assessments/$assessmentId" params={{ assessmentId: linkedAssessment.id }}>
+                  Start {linkedAssessment.isFinal ? "Final Test" : "Assessment"} →
+                </Link>
               </Button>
             </div>
           </div>
-        ) : <div key={item.id} className="text-sm text-muted-foreground">Assignment or quiz not linked.</div>
+        ) : (
+          <div key={item.id} className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-5 text-amber-600 dark:text-amber-400 text-xs">
+            <div className="font-semibold mb-1">Assessment Not Linked</div>
+            <p>Your instructor has placed this assessment item in the course. You can also start it directly from the <strong>Course Final Test</strong> tab.</p>
+          </div>
+        )
       )}
 
       {item.type === "reading" && (
@@ -1108,7 +1388,7 @@ function ContentViewer({
           <div
             ref={readingRef}
             className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto max-h-[750px] overflow-y-auto custom-scrollbar"
-            dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.body || "<p class='text-muted-foreground'>No content added yet.</p>") }}
+            dangerouslySetInnerHTML={{ __html: formatReadingHtml(item.body) }}
           />
           <style>{`
             .prose-document h1 { font-size: 2rem !important; font-weight: 700 !important; margin: 0.8em 0 0.4em !important; line-height: 1.25 !important; }
@@ -1125,6 +1405,8 @@ function ContentViewer({
             .prose-document code { background: rgba(99,102,241,0.15) !important; color: #818cf8 !important; padding: 2px 6px !important; border-radius: 4px !important; font-family: monospace !important; font-size: 0.9em !important; }
             .prose-document hr { border: none !important; border-top: 1px solid hsl(var(--border)) !important; margin: 1.2em 0 !important; }
             .prose-document img { max-width: 100% !important; height: auto !important; border-radius: 8px !important; margin: 12px 0 !important; display: block !important; }
+            .prose-document table { width: 100% !important; border-collapse: collapse !important; margin: 1em 0 !important; }
+            .prose-document th, .prose-document td { border: 1px solid hsl(var(--border)) !important; padding: 8px 12px !important; }
           `}</style>
         </div>
       )}
@@ -1144,7 +1426,7 @@ function ContentViewer({
               <div
                 ref={labRef}
                 className="prose-document max-w-none rounded-xl bg-card border border-border/80 p-6 sm:p-10 shadow-md text-foreground text-sm leading-relaxed mx-auto max-h-[500px] overflow-y-auto custom-scrollbar"
-                dangerouslySetInnerHTML={{ __html: sanitizeHtml(item.body) }}
+                dangerouslySetInnerHTML={{ __html: formatReadingHtml(item.body) }}
               />
             </div>
           )}
@@ -1172,7 +1454,7 @@ function ContentViewer({
         )
       )}
 
-      {!item.url && item.type !== "reading" && (
+      {!item.url && item.type !== "reading" && item.type !== "assessment" && (
         <div className="text-sm text-muted-foreground">No content URL provided.</div>
       )}
     </div>

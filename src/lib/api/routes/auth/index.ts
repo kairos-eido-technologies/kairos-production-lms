@@ -19,4 +19,3 @@ export const authApiRoutes: Record<
   "/api/auth/forgot-password": { POST: forgotPasswordRoute },
   "/api/auth/reset-password": { POST: resetPasswordRoute },
 };
-

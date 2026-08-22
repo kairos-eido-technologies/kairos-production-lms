@@ -1,69 +1,35 @@
 import { hashPassword, generateToken } from "../../../auth";
 import { sendVerificationEmail } from "../../../mail";
-import { serverStore } from "../../../db/server-store";
-import { supabase } from "../../../db/supabase-client";
+import { repository } from "../../../db/repository";
 import { generateSequentialRoleId } from "../../../id-generator";
+import { validateRequestBody, registerSchema } from "../../validation";
+import { logger } from "../../../logger";
 
 export async function registerRoute(request: Request): Promise<Response> {
   try {
-    const body = await request.json();
-    const { name, email, password, phone } = body;
-
-    // Validation
-    if (!name?.trim()) {
-      return new Response(
-        JSON.stringify({ error: "Name is required" }),
-        { status: 400, headers: { "content-type": "application/json" } }
-      );
+    const validation = await validateRequestBody(request, registerSchema);
+    if (validation.errorResponse) {
+      return validation.errorResponse;
     }
 
-    const emailLower = email?.toLowerCase().trim();
-    if (!emailLower || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailLower)) {
-      return new Response(
-        JSON.stringify({ error: "Valid email is required" }),
-        { status: 400, headers: { "content-type": "application/json" } }
-      );
-    }
+    const { name, email, password, phone } = validation.data;
+    const emailLower = email.toLowerCase().trim();
 
-    if (!password || password.length < 6) {
-      return new Response(
-        JSON.stringify({ error: "Password must be at least 6 characters" }),
-        { status: 400, headers: { "content-type": "application/json" } }
-      );
-    }
-
-    // Check if user already exists
-    let existingUser: any = null;
-    try {
-      const { data: sUser } = await supabase
-        .from("users")
-        .select("*")
-        .eq("email", emailLower)
-        .maybeSingle();
-      if (sUser) {
-        existingUser = sUser;
-      }
-    } catch (sErr) {}
-
-    if (!existingUser) {
-      existingUser = serverStore.getUserByEmail(emailLower);
-    }
-
+    // Check if user already exists in database
+    const existingUser = await repository.getUserByEmail(emailLower);
     if (existingUser) {
-      return new Response(
-        JSON.stringify({ error: "An account with that email already exists" }),
-        { status: 409, headers: { "content-type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "An account with that email already exists" }), {
+        status: 409,
+        headers: { "content-type": "application/json" },
+      });
     }
 
     // Create new user with verification details
     const passwordHash = await hashPassword(password);
-    
-    // Generate sequential student ID (STU-1, STU-2, etc.)
     const newUserId = await generateSequentialRoleId("student");
     const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    let createdUserRecord: any = {
+    const createdUser = await repository.createUser({
       id: newUserId,
       name: name.trim(),
       email: emailLower,
@@ -71,68 +37,31 @@ export async function registerRoute(request: Request): Promise<Response> {
       role: "student",
       status: "active",
       joinedAt: new Date(),
-      lastActive: new Date(),
       isEmailVerified: false,
-      emailVerificationCode: verificationCode,
       phone: phone || null,
-    };
+    });
 
-    // 1. Sync to Supabase REST API (Primary persistent store over Port 443)
-    try {
-      const { data: insertedSupabase, error: sErr } = await supabase.from("users").upsert({
-        id: newUserId,
-        name: name.trim(),
-        email: emailLower,
-        password_hash: passwordHash,
-        role: "student",
-        status: "active",
-        joined_at: new Date().toISOString(),
-        is_email_verified: false,
-        email_verification_code: verificationCode,
-        phone: phone || null,
-      }, { onConflict: "id" }).select().single();
-
-      if (sErr) {
-        console.error("❌ Supabase user registration error:", sErr);
-      } else if (insertedSupabase) {
-        console.log("✅ User created & persisted in Supabase REST database:", insertedSupabase.email);
-        createdUserRecord = {
-          ...insertedSupabase,
-          passwordHash: insertedSupabase.password_hash || passwordHash,
-          joinedAt: insertedSupabase.joined_at ? new Date(insertedSupabase.joined_at) : new Date(),
-          isEmailVerified: insertedSupabase.is_email_verified ?? false,
-          emailVerificationCode: insertedSupabase.email_verification_code || verificationCode,
-        };
-      }
-    } catch (sErr) {
-      console.error("❌ Exception during Supabase user registration:", sErr);
-    }
-
-    // 2. Sync to serverStore memory cache
-    serverStore.saveUser({
-      id: createdUserRecord.id,
-      name: createdUserRecord.name,
-      email: createdUserRecord.email,
-      passwordHash,
-      role: createdUserRecord.role || "student",
-      status: "active",
-      joinedAt: createdUserRecord.joinedAt ? new Date(createdUserRecord.joinedAt).toISOString() : new Date().toISOString(),
-      isEmailVerified: false,
-      emailVerificationCode: verificationCode,
-      phone: createdUserRecord.phone || null,
+    // Also store verification code in database
+    await repository.updateUser(newUserId, {
+      ...({ emailVerificationCode: verificationCode } as any),
     });
 
     // Send verification email
     await sendVerificationEmail(emailLower, verificationCode, name.trim());
 
     const token = generateToken({
-      userId: createdUserRecord.id,
-      email: createdUserRecord.email,
-      role: createdUserRecord.role,
+      userId: createdUser!.id,
+      email: createdUser!.email,
+      role: createdUser!.role,
     });
 
-    const { passwordHash: _, emailVerificationCode: __, ...userWithoutPassword } = createdUserRecord;
+    const {
+      passwordHash: _,
+      emailVerificationCode: __,
+      ...userWithoutPassword
+    } = createdUser as any;
 
+    const isProd = process.env.NODE_ENV === "production";
     return new Response(
       JSON.stringify({
         ok: true,
@@ -143,15 +72,16 @@ export async function registerRoute(request: Request): Promise<Response> {
         status: 201,
         headers: {
           "content-type": "application/json",
-          "set-cookie": `auth_token=${token}; HttpOnly; Secure; Path=/; Max-Age=86400; SameSite=Strict`,
+          "set-cookie": `auth_token=${token}; HttpOnly; ${isProd ? "Secure; " : ""}Path=/; Max-Age=86400; SameSite=Lax`,
         },
-      }
+      },
     );
   } catch (error) {
-    console.error("Registration error:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { "content-type": "application/json" } }
-    );
+    logger.error({ err: error }, "Registration route error");
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
   }
 }
+

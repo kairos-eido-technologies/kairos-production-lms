@@ -31,5 +31,9 @@ function AdminLayout() {
   }
 
   if (!user || user.isEmailVerified === false || user.role !== "admin") return null;
-  return <AppShell><Outlet /></AppShell>;
+  return (
+    <AppShell>
+      <Outlet />
+    </AppShell>
+  );
 }

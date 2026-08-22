@@ -8,7 +8,9 @@ const MAX_BYTES = 50 * 1024 * 1024; // 50MB limit
 const WARN_BYTES = 10 * 1024 * 1024;
 
 export function FileUploadButton({
-  accept, label = "Upload", onUpload,
+  accept,
+  label = "Upload",
+  onUpload,
 }: {
   accept: string;
   label?: string;
@@ -22,7 +24,9 @@ export function FileUploadButton({
     if (!file) return;
 
     if (file.size > MAX_BYTES) {
-      toast.error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max limit is 50 MB.`);
+      toast.error(
+        `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max limit is 50 MB.`,
+      );
       e.target.value = "";
       return;
     }
@@ -47,7 +51,11 @@ export function FileUploadButton({
         try {
           const fd = new FormData();
           fd.append("file", file);
-          const res = await fetch("/api/files", { method: "POST", body: fd, credentials: "same-origin" });
+          const res = await fetch("/api/files", {
+            method: "POST",
+            body: fd,
+            credentials: "same-origin",
+          });
           if (res.ok) {
             const json = await res.json();
             if (json.url) fileUrl = json.url as string;
@@ -83,8 +91,19 @@ export function FileUploadButton({
   return (
     <>
       <input ref={ref} type="file" accept={accept} className="hidden" onChange={handle} />
-      <Button type="button" variant="outline" size="sm" onClick={() => ref.current?.click()} disabled={busy} className="cursor-pointer">
-        {busy ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin text-primary" /> : <Upload className="h-3.5 w-3.5 mr-1.5 text-primary" />}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => ref.current?.click()}
+        disabled={busy}
+        className="cursor-pointer"
+      >
+        {busy ? (
+          <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin text-primary" />
+        ) : (
+          <Upload className="h-3.5 w-3.5 mr-1.5 text-primary" />
+        )}
         {label}
       </Button>
     </>

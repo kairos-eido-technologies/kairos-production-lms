@@ -29,7 +29,8 @@ export function CustomCursor() {
       rx += (x - rx) * 0.14;
       ry += (y - ry) * 0.14;
       if (dotRef.current) dotRef.current.style.transform = `translate3d(${x - 3}px,${y - 3}px,0)`;
-      if (ringRef.current) ringRef.current.style.transform = `translate3d(${rx - 16}px,${ry - 16}px,0)`;
+      if (ringRef.current)
+        ringRef.current.style.transform = `translate3d(${rx - 16}px,${ry - 16}px,0)`;
     };
     tick();
 

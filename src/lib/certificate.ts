@@ -392,7 +392,10 @@ export function renderPrintableCertificate(d: CertPrintData): string {
 }
 
 function escapeHtml(s: string): string {
-  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
+  return String(s || "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!,
+  );
 }
 
 export function openPrintableCertificate(d: CertPrintData) {

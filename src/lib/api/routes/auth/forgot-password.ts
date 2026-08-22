@@ -1,63 +1,51 @@
 import { sendPasswordResetEmail } from "../../../mail";
-import { serverStore } from "../../../db/server-store";
-import { supabase } from "../../../db/supabase-client";
+import { repository } from "../../../db/repository";
+import { validateRequestBody, forgotPasswordSchema } from "../../validation";
+import { logger } from "../../../logger";
 
 export async function forgotPasswordRoute(request: Request): Promise<Response> {
   try {
-    const body = await request.json();
-    const { email } = body;
-
-    const emailLower = email?.toLowerCase().trim();
-    if (!emailLower || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailLower)) {
-      return new Response(
-        JSON.stringify({ error: "Valid email is required" }),
-        { status: 400, headers: { "content-type": "application/json" } }
-      );
+    const validation = await validateRequestBody(request, forgotPasswordSchema);
+    if (validation.errorResponse) {
+      return validation.errorResponse;
     }
 
-    let user: any = null;
-    try {
-      const { data: sUser } = await supabase.from("users").select("*").eq("email", emailLower).maybeSingle();
-      if (sUser) {
-        user = sUser;
-      }
-    } catch (sErr) {
-      console.warn("⚠️ Supabase query warning in forgotPasswordRoute:", sErr);
-    }
+    const { email } = validation.data;
+    const emailLower = email.toLowerCase().trim();
 
+    const user = await repository.getUserByEmail(emailLower);
     if (!user) {
-      user = serverStore.getUserByEmail(emailLower);
-    }
-
-    if (!user) {
+      // Prevent user enumeration: return generic success
       return new Response(
-        JSON.stringify({ error: "No account found with this email address." }),
-        { status: 404, headers: { "content-type": "application/json" } }
+        JSON.stringify({
+          ok: true,
+          message: "If an account with that email exists, a reset code was sent.",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
       );
     }
 
     const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
 
-    try {
-      await supabase.from("users").update({ reset_password_code: resetCode }).eq("id", user.id);
-    } catch (sErr) {}
-
-    serverStore.updateUser(user.id, { resetPasswordCode: resetCode });
+    await repository.updateUser(user.id, {
+      ...({ resetPasswordCode: `${resetCode}:${Date.now()}` } as any),
+    });
 
     await sendPasswordResetEmail(user.email, resetCode, user.name);
 
     return new Response(
       JSON.stringify({
         ok: true,
-        message: "Reset code sent successfully",
+        message: "If an account with that email exists, a reset code was sent.",
       }),
-      { status: 200, headers: { "content-type": "application/json" } }
+      { status: 200, headers: { "content-type": "application/json" } },
     );
   } catch (error) {
-    console.error("forgotPasswordRoute error:", error);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { "content-type": "application/json" } }
-    );
+    logger.error({ err: error }, "forgotPasswordRoute error");
+    return new Response(JSON.stringify({ error: "Internal server error" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
   }
 }
+

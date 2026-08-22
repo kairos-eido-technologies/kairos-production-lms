@@ -1,11 +1,7 @@
 import React from "react";
 import { Link, useRouterState } from "@tanstack/react-router";
 import { LayoutGrid } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 
 export interface NavItem {

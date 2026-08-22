@@ -1,15 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import {
-  ArrowLeft, GraduationCap, BookOpen, Users, Upload, FileText, Video,
-  ClipboardCheck, Award, Clock, Search, ChevronLeft, ChevronRight,
-  Filter, Activity, CheckCircle2, AlertCircle, Calendar
+  ArrowLeft,
+  GraduationCap,
+  BookOpen,
+  Users,
+  Upload,
+  FileText,
+  Video,
+  ClipboardCheck,
+  Award,
+  Clock,
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Activity,
+  CheckCircle2,
+  AlertCircle,
+  Calendar,
 } from "lucide-react";
 import { PageHeader, GlassCard, StatCard, CourseThumbnail } from "@/components/ui-kit";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useData, formatLastActive, formatIdleDuration, isUserInactive } from "@/lib/data-store";
 
 export const Route = createFileRoute("/admin/teacher-analytics/$teacherId")({
@@ -37,18 +58,18 @@ function TeacherAnalyticsDetail() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [courseFilter, setCourseFilter] = useState<string>("all");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
+  const [pageSize, setPageSize] = useState(25);
 
   // Find target teacher
   const teacher = useMemo(
     () => users.find((u) => u.id === teacherId && u.role === "teacher"),
-    [users, teacherId]
+    [users, teacherId],
   );
 
   // Teacher's courses
   const teacherCourses = useMemo(
     () => courses.filter((c) => c.teacherId === teacherId),
-    [courses, teacherId]
+    [courses, teacherId],
   );
 
   // Teacher's total students
@@ -62,7 +83,8 @@ function TeacherAnalyticsDetail() {
 
   // All uploaded content items across teacher's courses
   const allUploads = useMemo(() => {
-    const items: Array<{ courseId: string; courseName: string; sectionTitle: string; item: any }> = [];
+    const items: Array<{ courseId: string; courseName: string; sectionTitle: string; item: any }> =
+      [];
     for (const c of teacherCourses) {
       for (const s of c.sections) {
         for (const it of s.items) {
@@ -75,9 +97,7 @@ function TeacherAnalyticsDetail() {
 
   // Teacher's assessments
   const teacherAssessments = useMemo(() => {
-    return assessments.filter(
-      (a) => teacherCourses.some((c) => c.id === a.courseId)
-    );
+    return assessments.filter((a) => teacherCourses.some((c) => c.id === a.courseId));
   }, [assessments, teacherCourses]);
 
   // Teacher's graded submissions
@@ -103,8 +123,8 @@ function TeacherAnalyticsDetail() {
         details: u.item.fileName
           ? `${u.item.fileName} (${u.item.fileSize || "unknown size"})`
           : u.item.url
-          ? u.item.url
-          : "Text content",
+            ? u.item.url
+            : "Text content",
       });
     }
 
@@ -189,7 +209,9 @@ function TeacherAnalyticsDetail() {
         <GlassCard className="text-center py-12">
           <AlertCircle className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
           <h2 className="text-lg font-semibold">Teacher Not Found</h2>
-          <p className="text-sm text-muted-foreground">The requested teacher profile does not exist or was removed.</p>
+          <p className="text-sm text-muted-foreground">
+            The requested teacher profile does not exist or was removed.
+          </p>
         </GlassCard>
       </div>
     );
@@ -207,7 +229,14 @@ function TeacherAnalyticsDetail() {
           </Link>
         </Button>
 
-        <Badge variant="outline" className={isInactive ? "border-warning/40 text-warning bg-warning/10" : "border-success/40 text-success bg-success/10"}>
+        <Badge
+          variant="outline"
+          className={
+            isInactive
+              ? "border-warning/40 text-warning bg-warning/10"
+              : "border-success/40 text-success bg-success/10"
+          }
+        >
           {isInactive ? `Idle (${formatIdleDuration(teacher)})` : "Active Now"}
         </Badge>
       </div>
@@ -217,7 +246,12 @@ function TeacherAnalyticsDetail() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-4">
             <div className="h-16 w-16 grid place-items-center rounded-2xl bg-primary/15 text-primary text-xl font-bold">
-              {teacher.name.split(" ").map((w) => w[0]).slice(0, 2).join("").toUpperCase()}
+              {teacher.name
+                .split(" ")
+                .map((w) => w[0])
+                .slice(0, 2)
+                .join("")
+                .toUpperCase()}
             </div>
             <div>
               <h1 className="text-2xl font-bold tracking-tight text-foreground">{teacher.name}</h1>
@@ -225,7 +259,8 @@ function TeacherAnalyticsDetail() {
               <div className="flex items-center gap-3 mt-1.5 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3.5 w-3.5 text-muted-foreground/70" />
-                  Joined: {teacher.joinedAt ? new Date(teacher.joinedAt).toLocaleDateString() : "N/A"}
+                  Joined:{" "}
+                  {teacher.joinedAt ? new Date(teacher.joinedAt).toLocaleDateString() : "N/A"}
                 </span>
                 <span>•</span>
                 <span className="flex items-center gap-1">
@@ -243,24 +278,41 @@ function TeacherAnalyticsDetail() {
         <StatCard label="Assigned Courses" value={teacherCourses.length} icon={BookOpen} />
         <StatCard label="Total Students" value={totalStudents} icon={Users} delay={0.05} />
         <StatCard label="Uploaded Items" value={allUploads.length} icon={Upload} delay={0.1} />
-        <StatCard label="Assessments / Quizzes" value={teacherAssessments.length} icon={ClipboardCheck} delay={0.15} accent />
+        <StatCard
+          label="Assessments / Quizzes"
+          value={teacherAssessments.length}
+          icon={ClipboardCheck}
+          delay={0.15}
+          accent
+        />
       </div>
 
       {/* Courses Overview */}
       <GlassCard>
         <h3 className="font-semibold text-base mb-4 flex items-center gap-2">
-          <BookOpen className="h-4 w-4 text-primary" /> Teacher's Assigned Courses ({teacherCourses.length})
+          <BookOpen className="h-4 w-4 text-primary" /> Teacher's Assigned Courses (
+          {teacherCourses.length})
         </h3>
         {teacherCourses.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-6">No courses assigned to this teacher.</p>
+          <p className="text-sm text-muted-foreground text-center py-6">
+            No courses assigned to this teacher.
+          </p>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {teacherCourses.map((c) => {
               const uploadsCount = c.sections.reduce((n, sec) => n + sec.items.length, 0);
               return (
-                <div key={c.id} className="p-4 rounded-xl border border-border/60 bg-secondary/10 space-y-2">
+                <div
+                  key={c.id}
+                  className="p-4 rounded-xl border border-border/60 bg-secondary/10 space-y-2"
+                >
                   <div className="flex items-center gap-2">
-                    <CourseThumbnail thumbnail={c.thumbnail} name={c.name} className="h-7 w-7" textClassName="text-xs" />
+                    <CourseThumbnail
+                      thumbnail={c.thumbnail}
+                      name={c.name}
+                      className="h-7 w-7"
+                      textClassName="text-xs"
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="font-medium text-sm truncate">{c.name}</div>
                       <div className="text-xs text-muted-foreground">{c.code}</div>
@@ -376,7 +428,9 @@ function TeacherAnalyticsDetail() {
         {filteredLogs.length === 0 ? (
           <div className="text-center py-10 border border-dashed border-border/60 rounded-xl">
             <FileText className="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
-            <p className="text-sm font-medium text-muted-foreground">No logs match your filter criteria.</p>
+            <p className="text-sm font-medium text-muted-foreground">
+              No logs match your filter criteria.
+            </p>
           </div>
         ) : (
           <div className="space-y-2">
@@ -388,7 +442,11 @@ function TeacherAnalyticsDetail() {
                 <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="h-9 w-9 grid place-items-center rounded-xl bg-primary/10 text-primary shrink-0">
                     {log.type === "upload" ? (
-                      log.contentType === "video" ? <Video className="h-4 w-4" /> : <Upload className="h-4 w-4" />
+                      log.contentType === "video" ? (
+                        <Video className="h-4 w-4" />
+                      ) : (
+                        <Upload className="h-4 w-4" />
+                      )
                     ) : log.type === "assessment" ? (
                       <ClipboardCheck className="h-4 w-4" />
                     ) : log.type === "grading" ? (
@@ -424,7 +482,8 @@ function TeacherAnalyticsDetail() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between pt-4 border-t border-border/40 text-xs">
             <span className="text-muted-foreground">
-              Showing {(currentPage - 1) * pageSize + 1} - {Math.min(currentPage * pageSize, filteredLogs.length)} of {filteredLogs.length} logs
+              Showing {(currentPage - 1) * pageSize + 1} -{" "}
+              {Math.min(currentPage * pageSize, filteredLogs.length)} of {filteredLogs.length} logs
             </span>
             <div className="flex items-center gap-2">
               <Button

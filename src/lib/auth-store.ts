@@ -1,22 +1,39 @@
 import { create } from "zustand";
 import type { User, Role } from "./mock-data";
-import { login as apiLogin, register as apiRegister, logout as apiLogout, getSession } from "./api/client";
+import {
+  login as apiLogin,
+  register as apiRegister,
+  logout as apiLogout,
+  getSession,
+} from "./api/client";
 
 interface AuthState {
   user: User | null;
   isLoading: boolean;
   isInitialized: boolean;
   error: string | null;
-  
-  login: (email: string, password: string) => Promise<{ ok: true; role: Role } | { ok: false; error: string }>;
-  register: (data: { name: string; email: string; password: string; phone?: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+
+  login: (
+    email: string,
+    password: string,
+  ) => Promise<{ ok: true; role: Role } | { ok: false; error: string }>;
+  register: (data: {
+    name: string;
+    email: string;
+    password: string;
+    phone?: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
   logout: () => Promise<void>;
   initializeSession: () => Promise<void>;
   setUser: (u: User) => void;
   verifyEmail: (code: string) => Promise<{ ok: true } | { ok: false; error: string }>;
   resendCode: () => Promise<{ ok: true; code?: string } | { ok: false; error: string }>;
   forgotPassword: (email: string) => Promise<{ ok: true } | { ok: false; error: string }>;
-  resetPassword: (data: { email: string; code: string; newPassword: string }) => Promise<{ ok: true } | { ok: false; error: string }>;
+  resetPassword: (data: {
+    email: string;
+    code: string;
+    newPassword: string;
+  }) => Promise<{ ok: true } | { ok: false; error: string }>;
 }
 
 function getInitialUser(): User | null {
@@ -47,7 +64,9 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (response.ok) {
         const u = response.user as unknown as User;
         if (typeof window !== "undefined") {
-          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+          try {
+            localStorage.setItem("itech-auth-user", JSON.stringify(u));
+          } catch (e) {}
         }
         set({
           user: u,
@@ -84,7 +103,9 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (response.ok) {
         const u = response.user as unknown as User;
         if (typeof window !== "undefined") {
-          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+          try {
+            localStorage.setItem("itech-auth-user", JSON.stringify(u));
+          } catch (e) {}
         }
         set({
           user: u,
@@ -106,14 +127,18 @@ export const useAuth = create<AuthState>()((set, get) => ({
     try {
       set({ isLoading: true });
       if (typeof window !== "undefined") {
-        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+        try {
+          localStorage.removeItem("itech-auth-user");
+        } catch (e) {}
       }
       await apiLogout();
       set({ user: null, isLoading: false, isInitialized: true });
     } catch (err) {
       console.error("Logout error:", err);
       if (typeof window !== "undefined") {
-        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+        try {
+          localStorage.removeItem("itech-auth-user");
+        } catch (e) {}
       }
       set({ user: null, isLoading: false, isInitialized: true });
     }
@@ -126,18 +151,24 @@ export const useAuth = create<AuthState>()((set, get) => ({
       if (session.ok && session.user) {
         const u = session.user as unknown as User;
         if (typeof window !== "undefined") {
-          try { localStorage.setItem("itech-auth-user", JSON.stringify(u)); } catch (e) {}
+          try {
+            localStorage.setItem("itech-auth-user", JSON.stringify(u));
+          } catch (e) {}
         }
         set({ user: u, isLoading: false, isInitialized: true });
       } else {
         if (typeof window !== "undefined") {
-          try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+          try {
+            localStorage.removeItem("itech-auth-user");
+          } catch (e) {}
         }
         set({ user: null, isLoading: false, isInitialized: true });
       }
     } catch (err) {
       if (typeof window !== "undefined") {
-        try { localStorage.removeItem("itech-auth-user"); } catch (e) {}
+        try {
+          localStorage.removeItem("itech-auth-user");
+        } catch (e) {}
       }
       set({ user: null, isLoading: false, isInitialized: true });
     }
@@ -167,8 +198,8 @@ export const useAuth = create<AuthState>()((set, get) => ({
         const updatedUser = data.user
           ? (data.user as User)
           : currentUser
-          ? { ...currentUser, isEmailVerified: true }
-          : null;
+            ? { ...currentUser, isEmailVerified: true }
+            : null;
         set({ user: updatedUser, isLoading: false });
         return { ok: true };
       }

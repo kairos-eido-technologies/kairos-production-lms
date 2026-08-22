@@ -19,14 +19,62 @@ const ITEMS: {
   icon: LucideIcon;
   metric: string;
 }[] = [
-  { title: "#1 in Tirunelveli", text: "The region's most trusted tech training destination.", accent: "var(--hud-amber)", icon: Trophy, metric: "RANK 01" },
-  { title: "30+ Professional Courses", text: "From web engineering to cloud, security and design.", accent: "var(--hud-indigo)", icon: BookOpen, metric: "30+" },
-  { title: "ISO 9001:2015 Certified", text: "Quality-audited training processes end to end.", accent: "var(--hud-emerald)", icon: ShieldCheck, metric: "ISO" },
-  { title: "Industry-Certified Trainers", text: "Taught by practising, vendor-certified engineers.", accent: "var(--hud-purple)", icon: GraduationCap, metric: "PRO" },
-  { title: "Hands-on Project Learning", text: "Every module ends in something you actually built.", accent: "var(--hud-cyan)", icon: Cpu, metric: "LABS" },
-  { title: "100% Placement Assistance", text: "Resume labs, mock drives and hiring partner access.", accent: "var(--hud-rose)", icon: Briefcase, metric: "100%" },
-  { title: "Live Projects & Internships", text: "Real client work inside a supervised studio setup.", accent: "var(--hud-orange)", icon: BadgeCheck, metric: "LIVE" },
-  { title: "Govt Recognized Certs", text: "Credentials recognised for jobs and higher study.", accent: "var(--hud-sky)", icon: Award, metric: "GOVT" },
+  {
+    title: "#1 in Tirunelveli",
+    text: "The region's most trusted tech training destination.",
+    accent: "var(--hud-amber)",
+    icon: Trophy,
+    metric: "RANK 01",
+  },
+  {
+    title: "30+ Professional Courses",
+    text: "From web engineering to cloud, security and design.",
+    accent: "var(--hud-indigo)",
+    icon: BookOpen,
+    metric: "30+",
+  },
+  {
+    title: "ISO 9001:2015 Certified",
+    text: "Quality-audited training processes end to end.",
+    accent: "var(--hud-emerald)",
+    icon: ShieldCheck,
+    metric: "ISO",
+  },
+  {
+    title: "Industry-Certified Trainers",
+    text: "Taught by practising, vendor-certified engineers.",
+    accent: "var(--hud-purple)",
+    icon: GraduationCap,
+    metric: "PRO",
+  },
+  {
+    title: "Hands-on Project Learning",
+    text: "Every module ends in something you actually built.",
+    accent: "var(--hud-cyan)",
+    icon: Cpu,
+    metric: "LABS",
+  },
+  {
+    title: "100% Placement Assistance",
+    text: "Resume labs, mock drives and hiring partner access.",
+    accent: "var(--hud-rose)",
+    icon: Briefcase,
+    metric: "100%",
+  },
+  {
+    title: "Live Projects & Internships",
+    text: "Real client work inside a supervised studio setup.",
+    accent: "var(--hud-orange)",
+    icon: BadgeCheck,
+    metric: "LIVE",
+  },
+  {
+    title: "Govt Recognized Certs",
+    text: "Credentials recognised for jobs and higher study.",
+    accent: "var(--hud-sky)",
+    icon: Award,
+    metric: "GOVT",
+  },
 ];
 
 function Card({ item, index }: { item: (typeof ITEMS)[number]; index: number }) {
@@ -61,7 +109,12 @@ function Card({ item, index }: { item: (typeof ITEMS)[number]; index: number }) 
         <motion.span
           initial={{ scale: 0.3, opacity: 0 }}
           animate={inView ? { scale: 1, opacity: 1 } : {}}
-          transition={{ delay: 0.22 + (index % 4) * 0.09, type: "spring", stiffness: 260, damping: 14 }}
+          transition={{
+            delay: 0.22 + (index % 4) * 0.09,
+            type: "spring",
+            stiffness: 260,
+            damping: 14,
+          }}
           className="flex h-9 w-9 items-center justify-center rounded-md border"
           style={{
             borderColor: `${item.accent}66`,

@@ -36,7 +36,9 @@ function getEmbedUrl(url: string): string | null {
       if (m) return `https://player.vimeo.com/video/${m[1]}`;
     }
   } catch {
-    const m = cleanUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^&\s?]+)/i);
+    const m = cleanUrl.match(
+      /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([^&\s?]+)/i,
+    );
     if (m) return `https://www.youtube.com/embed/${m[1]}`;
   }
   return null;
@@ -83,7 +85,10 @@ function Syllabus({ sections }: { sections: any[] }) {
                   const isLocked = item.is_locked ?? item.isLocked ?? true;
                   const Icon = isLocked && !flash ? Lock : Unlock;
                   return (
-                    <li key={item.id} className="flex items-center gap-2 text-xs text-muted-foreground py-0.5">
+                    <li
+                      key={item.id}
+                      className="flex items-center gap-2 text-xs text-muted-foreground py-0.5"
+                    >
                       <Icon
                         className="h-3 w-3 shrink-0 transition-colors duration-300"
                         style={{ color: flash ? "var(--success)" : undefined }}
@@ -120,11 +125,12 @@ function CourseCard({ course, index }: { course: any; index: number }) {
   const videoUrl = (course.previewVideoUrl || course.preview_video_url || "").trim();
   const embedUrl = videoUrl ? getEmbedUrl(videoUrl) : null;
 
-  const rawTech = Array.isArray(course.techStack) && course.techStack.length > 0
-    ? course.techStack
-    : Array.isArray(course.tech_stack) && course.tech_stack.length > 0
-    ? course.tech_stack
-    : [];
+  const rawTech =
+    Array.isArray(course.techStack) && course.techStack.length > 0
+      ? course.techStack
+      : Array.isArray(course.tech_stack) && course.tech_stack.length > 0
+        ? course.tech_stack
+        : [];
 
   const techStack = rawTech
     .map((t: any) => (typeof t === "string" ? t : t?.name || ""))
@@ -137,13 +143,13 @@ function CourseCard({ course, index }: { course: any; index: number }) {
       initial={{ opacity: 0, y: 26 }}
       animate={inView ? { opacity: 1, y: 0 } : {}}
       transition={{ duration: 0.6, delay: (index % 3) * 0.1 }}
-      className="relative"
+      className="relative w-full"
     >
       <div
         ref={ref}
         onMouseEnter={() => setHover(true)}
         onMouseLeave={() => setHover(false)}
-        className="panel relative overflow-hidden rounded-xl p-5 transition-[box-shadow,border-color,transform] duration-300 flex flex-col justify-between h-full hover:-translate-y-1"
+        className="panel relative overflow-hidden rounded-xl p-5 transition-[box-shadow,border-color,transform] duration-300 flex flex-col justify-between min-h-[570px] hover:-translate-y-1"
         style={{
           borderColor: hover ? accent : undefined,
           boxShadow: hover
@@ -167,91 +173,107 @@ function CourseCard({ course, index }: { course: any; index: number }) {
             animate={{ y: "220%" }}
             transition={{ duration: 1.1, ease: "linear" }}
             className="pointer-events-none absolute inset-x-0 top-0 h-16"
-            style={{ background: `linear-gradient(to bottom, transparent, ${accent}33, transparent)` }}
+            style={{
+              background: `linear-gradient(to bottom, transparent, ${accent}33, transparent)`,
+            }}
           />
         )}
 
-        <div>
-          {(badgeTag || featuredBadgeText) && (
-            <div className="relative flex items-center justify-between gap-3">
-              {badgeTag ? (
-                <span className="data-chip font-bold" style={{ color: accent, borderColor: `${accent}55` }}>
-                  {badgeTag}
-                </span>
-              ) : <span />}
-              {featuredBadgeText && (
-                <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                  <span
-                    className="inline-block h-1.5 w-1.5 rounded-full"
-                    style={{ background: accent, boxShadow: `0 0 8px ${accent}`, animation: reduced ? undefined : "pulse 1.8s infinite" }}
-                  />
-                  {featuredBadgeText}
-                </span>
-              )}
-            </div>
-          )}
+        <div className="flex flex-col flex-1">
+          <div className="relative flex items-center justify-between gap-3 min-h-[26px]">
+            {badgeTag ? (
+              <span
+                className="data-chip font-bold"
+                style={{ color: accent, borderColor: `${accent}55` }}
+              >
+                {badgeTag}
+              </span>
+            ) : (
+              <span />
+            )}
+            {featuredBadgeText && (
+              <span className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                <span
+                  className="inline-block h-1.5 w-1.5 rounded-full"
+                  style={{
+                    background: accent,
+                    boxShadow: `0 0 8px ${accent}`,
+                    animation: reduced ? undefined : "pulse 1.8s infinite",
+                  }}
+                />
+                {featuredBadgeText}
+              </span>
+            )}
+          </div>
 
-          <h3 className="relative mt-4 text-lg font-bold tracking-tight text-foreground">{course.name}</h3>
-          {description && (
-            <p className="relative mt-2 text-xs leading-relaxed text-muted-foreground">{description}</p>
-          )}
+          <h3 className="relative mt-3 text-lg font-bold tracking-tight text-foreground line-clamp-1">
+            {course.name}
+          </h3>
+          <p className="relative mt-2 text-xs leading-relaxed text-muted-foreground line-clamp-3 min-h-[50px]">
+            {description || "\u00A0"}
+          </p>
 
-          {videoUrl && (
+          {videoUrl ? (
             <div
-              className="relative mt-4 overflow-hidden rounded-lg border p-1 bg-black/40"
+              className="relative mt-3 overflow-hidden rounded-lg border p-1 bg-black/40"
               style={{ borderColor: `${accent}77`, boxShadow: `0 0 22px -6px ${accent}` }}
             >
               {embedUrl ? (
                 <div className="relative aspect-video rounded overflow-hidden">
-                  <iframe src={embedUrl} title={`${course.name} preview`} className="absolute inset-0 w-full h-full border-0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowFullScreen />
+                  <iframe
+                    src={embedUrl}
+                    title={`${course.name} preview`}
+                    className="absolute inset-0 w-full h-full border-0"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
                 </div>
               ) : (
                 <video
                   src={videoUrl}
                   controls
                   playsInline
-                  className="w-full rounded-md max-h-48 object-cover"
+                  className="w-full rounded-md aspect-video object-cover"
                 />
               )}
             </div>
-          )}
-
-          {techStack.length > 0 && (
-            <div className="relative mt-4 flex flex-wrap gap-1.5">
-              {techStack.map((tech: string, ti: number) => (
-                <span
-                  key={tech}
-                  className="data-chip transition-[color,border-color,box-shadow] duration-300"
-                  style={
-                    hover && !reduced
-                      ? {
-                          color: accent,
-                          borderColor: `${accent}66`,
-                          boxShadow: `0 0 10px -2px ${accent}`,
-                          transitionDelay: `${ti * 70}ms`,
-                        }
-                      : undefined
-                  }
-                >
-                  {tech}
-                </span>
-              ))}
+          ) : (
+            <div className="relative mt-3 rounded-lg border border-dashed border-border/60 aspect-video flex items-center justify-center bg-card/30">
+              <span className="font-mono text-[10px] text-muted-foreground">NO PREVIEW AVAILABLE</span>
             </div>
           )}
+
+          <div className="relative mt-3 flex flex-wrap content-start gap-1.5 min-h-[52px]">
+            {techStack.map((tech: string, ti: number) => (
+              <span
+                key={tech}
+                className="data-chip transition-[color,border-color,box-shadow] duration-300"
+                style={
+                  hover && !reduced
+                    ? {
+                        color: accent,
+                        borderColor: `${accent}66`,
+                        boxShadow: `0 0 10px -2px ${accent}`,
+                        transitionDelay: `${ti * 70}ms`,
+                      }
+                    : undefined
+                }
+              >
+                {tech}
+              </span>
+            ))}
+          </div>
         </div>
 
-        <div className="mt-5 pt-4 border-t border-border/80">
-          {(durationText || projectsText) && (
-            <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-3">
-              <span>{durationText}</span>
-              <span>{projectsText}</span>
-            </div>
-          )}
+        <div className="mt-4 pt-3 border-t border-border/80">
+          <div className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.14em] text-muted-foreground mb-3 min-h-[16px]">
+            <span>{durationText || "\u00A0"}</span>
+            <span>{projectsText || "\u00A0"}</span>
+          </div>
 
           <button
             onClick={() => setShowSyllabus((v) => !v)}
-            className="relative mt-4 flex w-full items-center justify-center gap-2 rounded-sm border border-border py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-foreground transition-colors hover:border-primary/60 hover:text-primary cursor-pointer"
+            className="relative flex w-full items-center justify-center gap-2 rounded-sm border border-border py-2 font-mono text-[11px] uppercase tracking-[0.16em] text-foreground transition-colors hover:border-primary/60 hover:text-primary cursor-pointer"
           >
             {showSyllabus ? "Hide Syllabus" : "View Syllabus"}
             <ChevronDown
@@ -260,7 +282,7 @@ function CourseCard({ course, index }: { course: any; index: number }) {
           </button>
 
           {showSyllabus && (
-            <div className="relative">
+            <div className="relative mt-4">
               <Syllabus sections={sections} />
             </div>
           )}
@@ -282,9 +304,13 @@ export function CourseGrid({ courses }: { courses: any[] }) {
       c.code || "",
       c.description || "",
       c.badgeTag || c.badge_tag || "",
-      Array.isArray(c.techStack) ? c.techStack.map((t: any) => (typeof t === "string" ? t : t?.name || "")).join(" ") : "",
+      Array.isArray(c.techStack)
+        ? c.techStack.map((t: any) => (typeof t === "string" ? t : t?.name || "")).join(" ")
+        : "",
       Array.isArray(c.tech_stack) ? c.tech_stack.join(" ") : "",
-    ].join(" ").toLowerCase();
+    ]
+      .join(" ")
+      .toLowerCase();
     return text.includes(q);
   });
 
@@ -322,7 +348,8 @@ export function CourseGrid({ courses }: { courses: any[] }) {
                   type="button"
                   onClick={() => setSearchQuery(tag === "All" ? "" : tag)}
                   className={`px-2 py-0.5 rounded-full border text-[10px] font-semibold cursor-pointer transition-all ${
-                    (tag === "All" && !searchQuery) || searchQuery.toLowerCase() === tag.toLowerCase()
+                    (tag === "All" && !searchQuery) ||
+                    searchQuery.toLowerCase() === tag.toLowerCase()
                       ? "bg-primary/15 border-primary/40 text-primary"
                       : "border-border/50 text-muted-foreground hover:border-primary/30 hover:text-foreground"
                   }`}
@@ -334,7 +361,7 @@ export function CourseGrid({ courses }: { courses: any[] }) {
           </div>
         </div>
 
-        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-12 grid items-start gap-6 md:grid-cols-2 lg:grid-cols-3">
           {filteredCourses.map((course, i) => (
             <CourseCard key={course.id || i} course={course} index={i} />
           ))}

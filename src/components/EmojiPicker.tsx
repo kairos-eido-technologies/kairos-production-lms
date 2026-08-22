@@ -5,11 +5,56 @@ import { useState } from "react";
 import { Image as ImageIcon, Smile, Link2 } from "lucide-react";
 
 const CURATED = [
-  "📘","📗","📕","📙","📚","🎓","🧠","💡","🚀","🔭",
-  "💻","🖥️","📱","⌨️","🖱️","🌐","🔐","🛡️","🤖","☁️",
-  "🎨","🖌️","✏️","📝","📐","📊","📈","🧮","⚗️","🔬",
-  "🧪","🛠️","⚙️","🔧","🏗️","🎬","🎵","🎮","📷","🎙️",
-  "💰","💼","📦","🌱","⚡","🔥","🏆","⭐","🎯","🧭",
+  "📘",
+  "📗",
+  "📕",
+  "📙",
+  "📚",
+  "🎓",
+  "🧠",
+  "💡",
+  "🚀",
+  "🔭",
+  "💻",
+  "🖥️",
+  "📱",
+  "⌨️",
+  "🖱️",
+  "🌐",
+  "🔐",
+  "🛡️",
+  "🤖",
+  "☁️",
+  "🎨",
+  "🖌️",
+  "✏️",
+  "📝",
+  "📐",
+  "📊",
+  "📈",
+  "🧮",
+  "⚗️",
+  "🔬",
+  "🧪",
+  "🛠️",
+  "⚙️",
+  "🔧",
+  "🏗️",
+  "🎬",
+  "🎵",
+  "🎮",
+  "📷",
+  "🎙️",
+  "💰",
+  "💼",
+  "📦",
+  "🌱",
+  "⚡",
+  "🔥",
+  "🏆",
+  "⭐",
+  "🎯",
+  "🧭",
 ];
 
 export function EmojiPicker({ value, onChange }: { value: string; onChange: (e: string) => void }) {
@@ -41,7 +86,7 @@ export function EmojiPicker({ value, onChange }: { value: string; onChange: (e: 
                 onError={() => setImgError(true)}
               />
             ) : (
-              <span className="text-xl shrink-0 leading-none">{!isUrl ? (value || "📘") : "📘"}</span>
+              <span className="text-xl shrink-0 leading-none">{!isUrl ? value || "📘" : "📘"}</span>
             )}
             <span className="text-xs truncate font-medium max-w-[140px] text-left">
               {isUrl ? "Custom Image URL" : value ? `Emoji (${value})` : "Select Icon"}
@@ -54,7 +99,9 @@ export function EmojiPicker({ value, onChange }: { value: string; onChange: (e: 
               type="button"
               onClick={() => setTab("emoji")}
               className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md font-medium transition ${
-                tab === "emoji" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                tab === "emoji"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Smile className="h-3.5 w-3.5" />
@@ -64,7 +111,9 @@ export function EmojiPicker({ value, onChange }: { value: string; onChange: (e: 
               type="button"
               onClick={() => setTab("url")}
               className={`flex items-center justify-center gap-1.5 py-1.5 rounded-md font-medium transition ${
-                tab === "url" ? "bg-background text-foreground shadow-xs" : "text-muted-foreground hover:text-foreground"
+                tab === "url"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Link2 className="h-3.5 w-3.5" />

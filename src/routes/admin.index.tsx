@@ -1,8 +1,22 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Users, GraduationCap, BookOpen, Award, UserPlus, BookPlus, AlertCircle,
-  Inbox, Clock, LayoutDashboard, BarChart3, FileEdit, ShieldCheck, UserCheck,
-  Calendar, MessageSquare, Radio,
+  Users,
+  GraduationCap,
+  BookOpen,
+  Award,
+  UserPlus,
+  BookPlus,
+  AlertCircle,
+  Inbox,
+  Clock,
+  LayoutDashboard,
+  BarChart3,
+  FileEdit,
+  ShieldCheck,
+  UserCheck,
+  Calendar,
+  MessageSquare,
+  Radio,
 } from "lucide-react";
 import { PageHeader, StatCard, GlassCard } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
@@ -39,7 +53,15 @@ function AdminDashboard() {
   );
 }
 
-function EmptyState({ icon: Icon, title, subtitle }: { icon: any; title: string; subtitle: string }) {
+function EmptyState({
+  icon: Icon,
+  title,
+  subtitle,
+}: {
+  icon: any;
+  title: string;
+  subtitle: string;
+}) {
   return (
     <div className="text-center py-10">
       <Icon className="mx-auto h-8 w-8 text-muted-foreground/40 mb-3" />

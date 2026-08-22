@@ -58,7 +58,6 @@ export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) 
     setCurrentSlide(1);
 
     if (!fileId) {
-      // Not a server file ID (e.g. data URL or external URL) -> fallback directly
       setUseFallback(true);
       setLoading(false);
       return;
@@ -82,14 +81,12 @@ export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) 
           setCurrentSlide(1);
           setLoading(false);
         } else {
-          // No slide images returned -> use XML fallback
           setUseFallback(true);
           setLoading(false);
         }
       })
-      .catch((err) => {
+      .catch(() => {
         if (!active) return;
-        console.warn("[PptxFullViewer] Server slide conversion not ready, using XML fallback:", err);
         setUseFallback(true);
         setLoading(false);
       });
@@ -97,7 +94,7 @@ export function PptxFullViewer({ url, title, onComplete }: PptxFullViewerProps) 
     return () => {
       active = false;
     };
-  }, [fileId, url]);
+  }, [fileId, url, title]);
 
   // If server slide conversion failed or not applicable, use XML-based client renderer
   if (useFallback) {

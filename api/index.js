@@ -61,9 +61,10 @@ export default async function handler(req, res) {
     let body = undefined;
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       if (req.body) {
-        body = typeof req.body === "string" || Buffer.isBuffer(req.body)
-          ? req.body
-          : JSON.stringify(req.body);
+        body =
+          typeof req.body === "string" || Buffer.isBuffer(req.body)
+            ? req.body
+            : JSON.stringify(req.body);
       }
     }
 

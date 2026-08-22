@@ -35,7 +35,10 @@ export function FinalCta() {
             to="/login"
             search={{ mode: "signup" }}
             className="inline-flex items-center gap-2 rounded-lg px-6 py-3 text-sm font-semibold tracking-wide text-primary-foreground transition-[box-shadow,opacity] duration-300 hover:opacity-90 active:scale-[0.98] cursor-pointer"
-            style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow-strong)" }}
+            style={{
+              background: "var(--gradient-primary)",
+              boxShadow: "var(--shadow-glow-strong)",
+            }}
           >
             <Rocket className="mr-1 inline h-4 w-4" />
             Login & Start Learning

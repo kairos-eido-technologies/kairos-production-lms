@@ -29,7 +29,9 @@ function SystemReadyTicker() {
     <div className="mx-auto mb-8 max-w-xl overflow-hidden rounded-full border border-primary/30 bg-primary/[0.08] px-4 py-1.5 backdrop-blur">
       <div className="whitespace-nowrap font-mono text-[11px] uppercase tracking-[0.22em] text-primary font-semibold flex items-center justify-center gap-2">
         <span className="h-1.5 w-1.5 rounded-full bg-primary inline-block animate-pulse shrink-0" />
-        <span key={idx} className="animate-slide-in">{TICKER_ITEMS[idx]}</span>
+        <span key={idx} className="animate-slide-in">
+          {TICKER_ITEMS[idx]}
+        </span>
       </div>
     </div>
   );
@@ -60,7 +62,9 @@ function CircuitTraces() {
           initial={{ pathLength: reduced ? 1 : 0, opacity: 0 }}
           animate={{ pathLength: 1, opacity: 0.8 }}
           transition={{ duration: reduced ? 0.01 : 2.6, delay: i * 0.25, ease: "easeInOut" }}
-          style={{ filter: "drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 60%, transparent))" }}
+          style={{
+            filter: "drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 60%, transparent))",
+          }}
         />
       ))}
       {[
@@ -71,7 +75,14 @@ function CircuitTraces() {
         [360, 420],
         [700, 620],
       ].map(([cx, cy]) => (
-        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.5" fill="var(--primary-glow)" opacity="0.75" />
+        <circle
+          key={`${cx}-${cy}`}
+          cx={cx}
+          cy={cy}
+          r="3.5"
+          fill="var(--primary-glow)"
+          opacity="0.75"
+        />
       ))}
     </svg>
   );
@@ -114,8 +125,7 @@ export function Hero({ onVerify }: { onVerify: () => void }) {
             <span className="ml-1 inline-block h-[0.9em] w-[3px] translate-y-[0.08em] animate-pulse bg-primary align-middle" />
           )}
           <span className="block text-foreground/80 mt-1">
-            with{" "}
-            {/* iTech — Orbitron font for a unique branded look */}
+            with {/* iTech — Orbitron font for a unique branded look */}
             <span
               style={{
                 fontFamily: "'Orbitron', monospace",
@@ -125,7 +135,8 @@ export function Hero({ onVerify }: { onVerify: () => void }) {
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
-                filter: "drop-shadow(0 0 18px color-mix(in oklab, var(--primary) 50%, transparent))",
+                filter:
+                  "drop-shadow(0 0 18px color-mix(in oklab, var(--primary) 50%, transparent))",
               }}
             >
               iTech
@@ -139,8 +150,8 @@ export function Hero({ onVerify }: { onVerify: () => void }) {
           transition={{ delay: 1.2, duration: 0.7 }}
           className="mx-auto mt-6 max-w-2xl text-pretty text-base text-muted-foreground sm:text-lg leading-relaxed"
         >
-          <strong className="text-foreground">iTech Academy</strong> — Tirunelveli's command centre for
-          industry-certified tech training, live projects, and 100% placement support.
+          <strong className="text-foreground">iTech Academy</strong> — Tirunelveli's command centre
+          for industry-certified tech training, live projects, and 100% placement support.
         </motion.p>
 
         <motion.div
@@ -151,7 +162,9 @@ export function Hero({ onVerify }: { onVerify: () => void }) {
         >
           <MagneticButton
             variant="launch"
-            onClick={() => document.getElementById("courses")?.scrollIntoView({ behavior: "smooth" })}
+            onClick={() =>
+              document.getElementById("courses")?.scrollIntoView({ behavior: "smooth" })
+            }
           >
             Explore Courses
           </MagneticButton>

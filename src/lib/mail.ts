@@ -1,14 +1,38 @@
 import nodemailer from "nodemailer";
 import "dotenv/config";
 
+let cachedTransporterInstance: any = null;
+let cachedFrom = "";
+
 function getMailTransporter() {
+  if (cachedTransporterInstance) {
+    return { transporter: cachedTransporterInstance, from: cachedFrom };
+  }
+
   const host = process.env.SMTP_HOST || "smtp.gmail.com";
   const port = parseInt(process.env.SMTP_PORT || "465", 10);
-  const user = process.env.SMTP_USER || "kairoseidotechnologies@gmail.com";
-  const pass = process.env.SMTP_PASS || "jnixkajeegoqzkuc";
-  const from = process.env.SMTP_FROM || '"iTech Academy" <kairoseidotechnologies@gmail.com>';
+  const user = process.env.SMTP_USER || "";
+  const pass = process.env.SMTP_PASS || "";
+  const from = process.env.SMTP_FROM || (user ? `"iTech Academy" <${user}>` : "");
+  cachedFrom = from || "noreply@itechacademy.com";
 
-  const transporter = nodemailer.createTransport({
+  if (!user || !pass) {
+    cachedTransporterInstance = {
+      sendMail: async (opts: any) => {
+        console.warn(
+          "⚠️ SMTP credentials not fully configured in environment variables. Email skipped:",
+          opts.to,
+        );
+        return { messageId: "mock-id" };
+      },
+    };
+    return { transporter: cachedTransporterInstance, from: cachedFrom };
+  }
+
+  cachedTransporterInstance = nodemailer.createTransport({
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
     host,
     port,
     secure: port === 465,
@@ -16,7 +40,7 @@ function getMailTransporter() {
     tls: { rejectUnauthorized: false },
   });
 
-  return { transporter, from };
+  return { transporter: cachedTransporterInstance, from: cachedFrom };
 }
 
 // Custom CSS styles for clean red/black/dark theme
@@ -163,10 +187,10 @@ const logoHeader = `<div class="header"><img src="https://kairos-production-lms.
 export async function sendVerificationEmail(
   toEmail: string,
   code: string,
-  name: string
+  name: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Verify Your Email — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Security Verification</span><h1>Verify Your Email Address</h1><p>Hello ${name},</p><p>Thank you for creating an account on iTech Academy. Please enter the 6-digit activation code below to verify your email and unlock your learning portal:</p><div class="code-box">${code}</div><p style="font-size: 13px; color: #71717a;">This verification code will expire in 24 hours. If you did not sign up for an iTech Academy account, please ignore this email.</p></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Verify Your Email — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Security Verification</span><h1>Verify Your Email Address</h1><p>Hello ${name},</p><p>Thank you for creating an account on iTech Academy. Please enter the 6-digit activation code below to verify your email and unlock your learning portal:</p><div class="code-box">${code}</div><p style="font-size: 13px; color: #71717a;">This verification code will expire in 24 hours. If you did not sign up for an iTech Academy account, please ignore this email.</p></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -182,7 +206,12 @@ export async function sendVerificationEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending verification email via SMTP:", error);
-    logConsoleFallback("SMTP Verification Email [RUNTIME ERROR - FALLBACK]", toEmail, name, `Verification Code: ${code}`);
+    logConsoleFallback(
+      "SMTP Verification Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      name,
+      `Verification Code: ${code}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -190,10 +219,10 @@ export async function sendVerificationEmail(
 export async function sendPasswordResetEmail(
   toEmail: string,
   code: string,
-  name: string
+  name: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Reset Your Password — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #f87171;">Account Security</span><h1>Reset Your Password</h1><p>Hello ${name},</p><p>We received a request to reset the password for your iTech Academy account. Use the secure single-use passcode below to proceed:</p><div class="code-box">${code}</div><p style="font-size: 13px; color: #71717a;">This security code will expire in 2 hours. If you didn't request a password reset, your account is safe and you can safely ignore this email.</p></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Reset Your Password — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #f87171;">Account Security</span><h1>Reset Your Password</h1><p>Hello ${name},</p><p>We received a request to reset the password for your iTech Academy account. Use the secure single-use passcode below to proceed:</p><div class="code-box">${code}</div><p style="font-size: 13px; color: #71717a;">This security code will expire in 2 hours. If you didn't request a password reset, your account is safe and you can safely ignore this email.</p></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -209,7 +238,12 @@ export async function sendPasswordResetEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending password reset email via SMTP:", error);
-    logConsoleFallback("SMTP Password Reset Email [RUNTIME ERROR - FALLBACK]", toEmail, name, `Reset Code: ${code}`);
+    logConsoleFallback(
+      "SMTP Password Reset Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      name,
+      `Reset Code: ${code}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -218,10 +252,25 @@ export async function sendCourseAssignedEmail(
   toEmail: string,
   toName: string,
   courseName: string,
-  courseCode: string
+  courseCode: string,
+  accessMode: "lifetime" | "limited" = "lifetime",
+  endDate?: string | null,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
+  let accessLabel = "Lifetime Access";
+  if (accessMode === "limited") {
+    if (endDate) {
+      const d = new Date(endDate);
+      const dateFormatted = !isNaN(d.getTime())
+        ? d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+        : endDate;
+      accessLabel = `Limited Access (Expires: ${dateFormatted})`;
+    } else {
+      accessLabel = "Limited Duration Access";
+    }
+  }
+
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Course Assigned — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #34d399;">New Enrollment</span><h1>New Course Assigned 🎉</h1><p>Hello ${toName},</p><p>Great news! An instructor has assigned a new learning path to your student dashboard. You can begin accessing your course modules immediately:</p><div class="card"><div class="card-title">${courseName}</div><div class="card-desc">Course Code: <strong>${courseCode}</strong> &bull; Access: Lifetime Access</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Launch Course Dashboard</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Course Assigned — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #34d399;">New Enrollment</span><h1>New Course Assigned 🎉</h1><p>Hello ${toName},</p><p>Great news! An instructor has assigned a new learning path to your student dashboard. You can begin accessing your course modules immediately:</p><div class="card"><div class="card-title">${courseName}</div><div class="card-desc">Course Code: <strong>${courseCode}</strong> &bull; Access: <strong>${accessLabel}</strong></div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Launch Course Dashboard</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -230,14 +279,19 @@ export async function sendCourseAssignedEmail(
       from,
       to: toEmail,
       subject: `Course Assigned: ${courseName} — iTech Academy`,
-      text: `Hello ${toName},\n\nA new course has been assigned for you: ${courseName} (${courseCode}).\n\nLog in at https://kairos-production-lms.vercel.app/login to access your materials.`,
+      text: `Hello ${toName},\n\nA new course has been assigned for you: ${courseName} (${courseCode}).\nAccess: ${accessLabel}\n\nLog in at https://kairos-production-lms.vercel.app/login to access your materials.`,
       html: htmlContent,
     });
-    console.log(`✅ Course assigned email sent to ${toEmail} (${courseCode})`);
+    console.log(`✅ Course assigned email sent to ${toEmail} (${courseCode} - ${accessLabel})`);
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending course assigned email via SMTP:", error);
-    logConsoleFallback("Course Assigned Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName} (${courseCode})`);
+    logConsoleFallback(
+      "Course Assigned Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName} (${courseCode}) | Access: ${accessLabel}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -246,10 +300,10 @@ export async function sendNudgeEmail(
   toEmail: string,
   toName: string,
   subject: string,
-  messageBody: string
+  messageBody: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>We Miss You — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); color: #fbbf24;">Progress Reminder</span><h1>We Miss You! 👋</h1><p>Hello ${toName},</p><p>We noticed you haven't logged in recently. Here is a personal message from your academic manager:</p><div class="card" style="border-left-color: #f59e0b;"><p style="color: #ffffff; font-style: italic; margin: 0; font-size: 15px; line-height: 1.6;">"${messageBody}"</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Resume Learning</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>We Miss You — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(245, 158, 11, 0.15); border-color: rgba(245, 158, 11, 0.35); color: #fbbf24;">Progress Reminder</span><h1>We Miss You! 👋</h1><p>Hello ${toName},</p><p>We noticed you haven't logged in recently. Here is a personal message from your academic manager:</p><div class="card" style="border-left-color: #f59e0b;"><p style="color: #ffffff; font-style: italic; margin: 0; font-size: 15px; line-height: 1.6;">"${messageBody}"</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Resume Learning</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -265,7 +319,12 @@ export async function sendNudgeEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending nudge email via SMTP:", error);
-    logConsoleFallback("Idle Nudge Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Message: "${messageBody}"`);
+    logConsoleFallback(
+      "Idle Nudge Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Message: "${messageBody}"`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -274,10 +333,10 @@ export async function sendTeacherCourseAssignedEmail(
   toEmail: string,
   toName: string,
   courseName: string,
-  courseCode: string
+  courseCode: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Teaching Assignment — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Faculty Assignment</span><h1>New Teaching Assignment</h1><p>Hello Instructor ${toName},</p><p>You have been assigned as the primary instructor for the following course module. You now have full permission to build syllabus sections, upload labs, create quizzes, and evaluate student submissions:</p><div class="card"><div class="card-title">${courseName}</div><div class="card-desc">Course Code: <strong>${courseCode}</strong> &bull; Status: Active</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Open Teacher Portal</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Teaching Assignment — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Faculty Assignment</span><h1>New Teaching Assignment</h1><p>Hello Instructor ${toName},</p><p>You have been assigned as the primary instructor for the following course module. You now have full permission to build syllabus sections, upload labs, create quizzes, and evaluate student submissions:</p><div class="card"><div class="card-title">${courseName}</div><div class="card-desc">Course Code: <strong>${courseCode}</strong> &bull; Status: Active</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Open Teacher Portal</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -293,7 +352,12 @@ export async function sendTeacherCourseAssignedEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending teacher course assigned email via SMTP:", error);
-    logConsoleFallback("Teacher Course Assigned Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName} (${courseCode})`);
+    logConsoleFallback(
+      "Teacher Course Assigned Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName} (${courseCode})`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -303,10 +367,10 @@ export async function sendNewSubmissionEmail(
   toName: string,
   studentName: string,
   assessmentTitle: string,
-  courseName: string
+  courseName: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Quiz Submission — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.35); color: #60a5fa;">Grading Alert</span><h1>New Quiz Submission Received</h1><p>Hello ${toName},</p><p>A student has completed an assessment and submitted their responses for instructor review:</p><div class="card" style="border-left-color: #3b82f6;"><div class="card-title">${assessmentTitle}</div><div class="card-desc">Submitted by: <strong>${studentName}</strong> &bull; Course: ${courseName}</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);">Open Grading Panel</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Quiz Submission — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.35); color: #60a5fa;">Grading Alert</span><h1>New Quiz Submission Received</h1><p>Hello ${toName},</p><p>A student has completed an assessment and submitted their responses for instructor review:</p><div class="card" style="border-left-color: #3b82f6;"><div class="card-title">${assessmentTitle}</div><div class="card-desc">Submitted by: <strong>${studentName}</strong> &bull; Course: ${courseName}</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);">Open Grading Panel</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -322,7 +386,12 @@ export async function sendNewSubmissionEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending new submission email via SMTP:", error);
-    logConsoleFallback("New Submission Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Student: ${studentName}, Quiz: ${assessmentTitle}`);
+    logConsoleFallback(
+      "New Submission Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Student: ${studentName}, Quiz: ${assessmentTitle}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -332,10 +401,10 @@ export async function sendSubmissionGradedEmail(
   toName: string,
   assessmentTitle: string,
   score: number,
-  maxScore: number
+  maxScore: number,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Quiz Graded — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #34d399;">Assessment Results</span><h1>Your Quiz Has Been Graded 🎉</h1><p>Hello ${toName},</p><p>Your submission for the following assessment has been evaluated by your instructor:</p><div class="card" style="border-left-color: #10b981;"><div class="card-title">${assessmentTitle}</div><div class="card-desc" style="font-size: 16px; margin-top: 8px; color: #ffffff;">Final Score: <strong style="color: #34d399;">${score} / ${maxScore} points</strong> (${Math.round((score / (maxScore || 1)) * 100)}%)</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">View Grade Breakdown</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Quiz Graded — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(16, 185, 129, 0.15); border-color: rgba(16, 185, 129, 0.35); color: #34d399;">Assessment Results</span><h1>Your Quiz Has Been Graded 🎉</h1><p>Hello ${toName},</p><p>Your submission for the following assessment has been evaluated by your instructor:</p><div class="card" style="border-left-color: #10b981;"><div class="card-title">${assessmentTitle}</div><div class="card-desc" style="font-size: 16px; margin-top: 8px; color: #ffffff;">Final Score: <strong style="color: #34d399;">${score} / ${maxScore} points</strong> (${Math.round((score / (maxScore || 1)) * 100)}%)</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">View Grade Breakdown</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -351,7 +420,12 @@ export async function sendSubmissionGradedEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending quiz graded email via SMTP:", error);
-    logConsoleFallback("Quiz Graded Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Quiz: ${assessmentTitle}, Score: ${score}/${maxScore}`);
+    logConsoleFallback(
+      "Quiz Graded Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Quiz: ${assessmentTitle}, Score: ${score}/${maxScore}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -360,10 +434,10 @@ export async function sendCertificateRequestedEmail(
   toEmail: string,
   toName: string,
   studentName: string,
-  courseName: string
+  courseName: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Request — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.35); color: #c084fc;">Certificate Review</span><h1>New Certificate Request</h1><p>Hello ${toName},</p><p>A student has passed the final examination requirements and requested their official course completion certificate:</p><div class="card" style="border-left-color: #a855f7;"><div class="card-title">${courseName}</div><div class="card-desc">Requested by: <strong>${studentName}</strong></div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%); box-shadow: 0 8px 24px rgba(147, 51, 234, 0.35);">Review Certificate Request</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Request — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.35); color: #c084fc;">Certificate Review</span><h1>New Certificate Request</h1><p>Hello ${toName},</p><p>A student has passed the final examination requirements and requested their official course completion certificate:</p><div class="card" style="border-left-color: #a855f7;"><div class="card-title">${courseName}</div><div class="card-desc">Requested by: <strong>${studentName}</strong></div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #9333ea 0%, #7e22ce 100%); box-shadow: 0 8px 24px rgba(147, 51, 234, 0.35);">Review Certificate Request</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -379,7 +453,12 @@ export async function sendCertificateRequestedEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending certificate request email via SMTP:", error);
-    logConsoleFallback("Certificate Requested Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Student: ${studentName}, Course: ${courseName}`);
+    logConsoleFallback(
+      "Certificate Requested Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Student: ${studentName}, Course: ${courseName}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -387,10 +466,10 @@ export async function sendCertificateRequestedEmail(
 export async function sendCertificateApprovedEmail(
   toEmail: string,
   toName: string,
-  courseName: string
+  courseName: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Approved! — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.35); color: #facc15;">Official Certification</span><h1>Congratulations! 🎉</h1><p>Hello ${toName},</p><p>Outstanding achievement! Your official certificate of completion has been approved by the academic faculty:</p><div class="card" style="border-left-color: #eab308; background: #1a1710;"><div class="card-title" style="color: #fef08a;">${courseName}</div><div class="card-desc" style="color: #fde047;">Your verified certificate is ready for viewing and PDF download.</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); box-shadow: 0 8px 24px rgba(217, 119, 6, 0.35);">Download Certificate PDF</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Approved! — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(234, 179, 8, 0.15); border-color: rgba(234, 179, 8, 0.35); color: #facc15;">Official Certification</span><h1>Congratulations! 🎉</h1><p>Hello ${toName},</p><p>Outstanding achievement! Your official certificate of completion has been approved by the academic faculty:</p><div class="card" style="border-left-color: #eab308; background: #1a1710;"><div class="card-title" style="color: #fef08a;">${courseName}</div><div class="card-desc" style="color: #fde047;">Your verified certificate is ready for viewing and PDF download.</div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #d97706 0%, #b45309 100%); box-shadow: 0 8px 24px rgba(217, 119, 6, 0.35);">Download Certificate PDF</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -406,7 +485,12 @@ export async function sendCertificateApprovedEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending certificate approved email via SMTP:", error);
-    logConsoleFallback("Certificate Approved Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName}`);
+    logConsoleFallback(
+      "Certificate Approved Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -415,10 +499,10 @@ export async function sendCertificateRejectedEmail(
   toEmail: string,
   toName: string,
   courseName: string,
-  reason: string
+  reason: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Update — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #f87171;">Certificate Revision</span><h1>Certificate Request Update</h1><p>Hello ${toName},</p><p>We are writing to inform you that your certificate request requires a minor revision before final approval:</p><div class="card" style="border-left-color: #ef4444;"><div class="card-title">${courseName}</div><div class="card-desc" style="color: #ffffff; margin-top: 6px;">Reason: <strong>${reason}</strong></div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Update Submission</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>Certificate Update — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(239, 68, 68, 0.15); border-color: rgba(239, 68, 68, 0.35); color: #f87171;">Certificate Revision</span><h1>Certificate Request Update</h1><p>Hello ${toName},</p><p>We are writing to inform you that your certificate request requires a minor revision before final approval:</p><div class="card" style="border-left-color: #ef4444;"><div class="card-title">${courseName}</div><div class="card-desc" style="color: #ffffff; margin-top: 6px;">Reason: <strong>${reason}</strong></div></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Update Submission</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -434,7 +518,12 @@ export async function sendCertificateRejectedEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending certificate rejected email via SMTP:", error);
-    logConsoleFallback("Certificate Rejected Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName}, Reason: ${reason}`);
+    logConsoleFallback(
+      "Certificate Rejected Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName}, Reason: ${reason}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -444,10 +533,10 @@ export async function sendMessageNotificationEmail(
   toName: string,
   senderName: string,
   subject: string,
-  body: string
+  body: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Message — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Inbox Notification</span><h1>New Message Received</h1><p>Hello ${toName},</p><p>You have received a new direct message from <strong>${senderName}</strong>:</p><div class="card"><div class="card-title">${subject}</div><p style="color: #ffffff; font-style: italic; margin-top: 8px; margin-bottom: 0; line-height: 1.6;">"${body}"</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Reply in Portal</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Message — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Inbox Notification</span><h1>New Message Received</h1><p>Hello ${toName},</p><p>You have received a new direct message from <strong>${senderName}</strong>:</p><div class="card"><div class="card-title">${subject}</div><p style="color: #ffffff; font-style: italic; margin-top: 8px; margin-bottom: 0; line-height: 1.6;">"${body}"</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">Reply in Portal</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -463,7 +552,12 @@ export async function sendMessageNotificationEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending message notification email via SMTP:", error);
-    logConsoleFallback("New Message Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `From: ${senderName}, Subject: ${subject}`);
+    logConsoleFallback(
+      "New Message Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `From: ${senderName}, Subject: ${subject}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -473,10 +567,10 @@ export async function sendAnnouncementEmail(
   toName: string,
   courseName: string,
   announcementTitle: string,
-  announcementBody: string
+  announcementBody: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Announcement — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Broadcast Alert</span><h1>New Course Announcement</h1><p>Hello ${toName},</p><p>An announcement has been published in <strong>${courseName}</strong>:</p><div class="card"><div class="card-title">${announcementTitle}</div><p style="color: #ffffff; margin-top: 8px; margin-bottom: 0; line-height: 1.6;">${announcementBody}</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">View Announcement</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Announcement — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge">Broadcast Alert</span><h1>New Course Announcement</h1><p>Hello ${toName},</p><p>An announcement has been published in <strong>${courseName}</strong>:</p><div class="card"><div class="card-title">${announcementTitle}</div><p style="color: #ffffff; margin-top: 8px; margin-bottom: 0; line-height: 1.6;">${announcementBody}</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn">View Announcement</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -492,7 +586,12 @@ export async function sendAnnouncementEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending announcement email via SMTP:", error);
-    logConsoleFallback("Course Announcement Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName}, Title: ${announcementTitle}`);
+    logConsoleFallback(
+      "Course Announcement Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName}, Title: ${announcementTitle}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -503,10 +602,10 @@ export async function sendCalendarEventEmail(
   courseName: string,
   eventTitle: string,
   eventDate: string,
-  eventDescription: string
+  eventDescription: string,
 ): Promise<{ success: boolean; mode: "smtp" | "console" }> {
   const htmlContent = `
-    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Event — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.35); color: #38bdf8;">Schedule Alert</span><h1>New Calendar Event Scheduled</h1><p>Hello ${toName},</p><p>A new calendar event has been added to <strong>${courseName}</strong>:</p><div class="card" style="border-left-color: #0ea5e9;"><div class="card-title">${eventTitle}</div><div class="card-desc" style="color: #38bdf8; margin-top: 4px; margin-bottom: 8px;">Date & Time: <strong>${eventDate}</strong></div><p style="color: #ffffff; margin: 0; line-height: 1.6;">${eventDescription}</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); box-shadow: 0 8px 24px rgba(2, 132, 199, 0.35);">Add to Calendar</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} iTech Academy. All rights reserved.</div></div></body></html>
+    <!DOCTYPE html><html><head><meta charset="utf-8"><title>New Event — iTech Academy</title><style>${commonStyles}</style></head><body><div class="container">${logoHeader}<div class="content"><span class="badge" style="background: rgba(14, 165, 233, 0.15); border-color: rgba(14, 165, 233, 0.35); color: #38bdf8;">Schedule Alert</span><h1>New Calendar Event Scheduled</h1><p>Hello ${toName},</p><p>A new calendar event has been added to <strong>${courseName}</strong>:</p><div class="card" style="border-left-color: #0ea5e9;"><div class="card-title">${eventTitle}</div><div class="card-desc" style="color: #38bdf8; margin-top: 4px; margin-bottom: 8px;">Date & Time: <strong>${eventDate}</strong></div><p style="color: #ffffff; margin: 0; line-height: 1.6;">${eventDescription}</p></div><div class="btn-container"><a href="https://kairos-production-lms.vercel.app/login" class="btn" style="background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%); box-shadow: 0 8px 24px rgba(2, 132, 199, 0.35);">Add to Calendar</a></div></div><div class="footer">&copy; ${new Date().getFullYear()} Kairos Eido Technologies. All rights reserved.</div></div></body></html>
   `;
 
   try {
@@ -522,7 +621,12 @@ export async function sendCalendarEventEmail(
     return { success: true, mode: "smtp" };
   } catch (error) {
     console.error("❌ Error sending calendar event email via SMTP:", error);
-    logConsoleFallback("Calendar Event Email [RUNTIME ERROR - FALLBACK]", toEmail, toName, `Course: ${courseName}, Title: ${eventTitle}`);
+    logConsoleFallback(
+      "Calendar Event Email [RUNTIME ERROR - FALLBACK]",
+      toEmail,
+      toName,
+      `Course: ${courseName}, Title: ${eventTitle}`,
+    );
     return { success: false, mode: "console" };
   }
 }
@@ -541,17 +645,99 @@ export async function sendAllTestEmails(toEmail: string = "rhemanthjeyanezsingh@
 
   results.push(await sendVerificationEmail(toEmail, "849201", recipientName));
   results.push(await sendPasswordResetEmail(toEmail, "491028", recipientName));
-  results.push(await sendCourseAssignedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "CS-401"));
-  results.push(await sendNudgeEmail(toEmail, recipientName, "We miss you at iTech Academy!", "Don't forget to complete Module 4 of Full-Stack Web Development. You're almost at 80% completion!"));
-  results.push(await sendTeacherCourseAssignedEmail(toEmail, recipientName, "Advanced React & Next.js Systems", "CS-502"));
-  results.push(await sendNewSubmissionEmail(toEmail, recipientName, "Alex Rivers", "Midterm Assessment: Microservices", "CS-401"));
-  results.push(await sendSubmissionGradedEmail(toEmail, recipientName, "Midterm Assessment: Microservices", 95, 100));
-  results.push(await sendCertificateRequestedEmail(toEmail, recipientName, "Alex Rivers", "Full-Stack Web Development Mastery"));
-  results.push(await sendCertificateApprovedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery"));
-  results.push(await sendCertificateRejectedEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "Please resubmit final capstone project repository URL."));
-  results.push(await sendMessageNotificationEmail(toEmail, recipientName, "Dr. Sarah Jenkins", "Office Hours Schedule Update", "Hi Rhemanth, tomorrow's office hours have been moved to 3 PM EST. See you in the portal!"));
-  results.push(await sendAnnouncementEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "New Lecture & Code Repository Added", "Check out Section 5 for the latest code samples and video walkthroughs. Happy coding!"));
-  results.push(await sendCalendarEventEmail(toEmail, recipientName, "Full-Stack Web Development Mastery", "Live Q&A Webinar with Tech Leads", "Friday, 4:00 PM EST", "Join our senior engineers for a live code review and Q&A session. Link is available in the course dashboard."));
+  results.push(
+    await sendCourseAssignedEmail(
+      toEmail,
+      recipientName,
+      "Full-Stack Web Development Mastery",
+      "CS-401",
+    ),
+  );
+  results.push(
+    await sendNudgeEmail(
+      toEmail,
+      recipientName,
+      "We miss you at iTech Academy!",
+      "Don't forget to complete Module 4 of Full-Stack Web Development. You're almost at 80% completion!",
+    ),
+  );
+  results.push(
+    await sendTeacherCourseAssignedEmail(
+      toEmail,
+      recipientName,
+      "Advanced React & Next.js Systems",
+      "CS-502",
+    ),
+  );
+  results.push(
+    await sendNewSubmissionEmail(
+      toEmail,
+      recipientName,
+      "Alex Rivers",
+      "Midterm Assessment: Microservices",
+      "CS-401",
+    ),
+  );
+  results.push(
+    await sendSubmissionGradedEmail(
+      toEmail,
+      recipientName,
+      "Midterm Assessment: Microservices",
+      95,
+      100,
+    ),
+  );
+  results.push(
+    await sendCertificateRequestedEmail(
+      toEmail,
+      recipientName,
+      "Alex Rivers",
+      "Full-Stack Web Development Mastery",
+    ),
+  );
+  results.push(
+    await sendCertificateApprovedEmail(
+      toEmail,
+      recipientName,
+      "Full-Stack Web Development Mastery",
+    ),
+  );
+  results.push(
+    await sendCertificateRejectedEmail(
+      toEmail,
+      recipientName,
+      "Full-Stack Web Development Mastery",
+      "Please resubmit final capstone project repository URL.",
+    ),
+  );
+  results.push(
+    await sendMessageNotificationEmail(
+      toEmail,
+      recipientName,
+      "Dr. Sarah Jenkins",
+      "Office Hours Schedule Update",
+      "Hi Rhemanth, tomorrow's office hours have been moved to 3 PM EST. See you in the portal!",
+    ),
+  );
+  results.push(
+    await sendAnnouncementEmail(
+      toEmail,
+      recipientName,
+      "Full-Stack Web Development Mastery",
+      "New Lecture & Code Repository Added",
+      "Check out Section 5 for the latest code samples and video walkthroughs. Happy coding!",
+    ),
+  );
+  results.push(
+    await sendCalendarEventEmail(
+      toEmail,
+      recipientName,
+      "Full-Stack Web Development Mastery",
+      "Live Q&A Webinar with Tech Leads",
+      "Friday, 4:00 PM EST",
+      "Join our senior engineers for a live code review and Q&A session. Link is available in the course dashboard.",
+    ),
+  );
 
   return results;
 }

@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
-  LayoutDashboard, FileEdit, ClipboardCheck, Users, FileCheck,
-  ShieldCheck, MessageSquare, Calendar,
+  LayoutDashboard,
+  FileEdit,
+  ClipboardCheck,
+  Users,
+  FileCheck,
+  ShieldCheck,
+  MessageSquare,
+  Calendar,
 } from "lucide-react";
 import { useAuth } from "@/lib/store";
 import { AppLaunchpad } from "@/components/AppLaunchpad";

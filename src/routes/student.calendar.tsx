@@ -18,11 +18,21 @@ function StudentCalendar() {
     return courses.filter((c) => c.studentIds.includes(user.id));
   }, [courses, user]);
 
-  const myCourseIds = useMemo(() => new Set(myEnrolledCourses.map((c) => c.id)), [myEnrolledCourses]);
+  const myCourseIds = useMemo(
+    () => new Set(myEnrolledCourses.map((c) => c.id)),
+    [myEnrolledCourses],
+  );
 
   // Combine custom events + course deadlines for enrolled courses
   const allCalEvents = useMemo(() => {
-    const list: Array<{ id: string; title: string; description: string; date: Date; type: "event" | "deadline"; courseName: string }> = [];
+    const list: Array<{
+      id: string;
+      title: string;
+      description: string;
+      date: Date;
+      type: "event" | "deadline";
+      courseName: string;
+    }> = [];
 
     // Custom events
     events.forEach((e) => {
@@ -61,7 +71,20 @@ function StudentCalendar() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const monthNames = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+  ];
   const daysOfWeek = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   // Days calculations
@@ -74,7 +97,11 @@ function StudentCalendar() {
     // Prev month padding
     for (let i = firstDayIndex - 1; i >= 0; i--) {
       const d = prevMonthTotalDays - i;
-      days.push({ day: d, isCurrentMonth: false, date: new Date(month === 0 ? year - 1 : year, month === 0 ? 11 : month - 1, d) });
+      days.push({
+        day: d,
+        isCurrentMonth: false,
+        date: new Date(month === 0 ? year - 1 : year, month === 0 ? 11 : month - 1, d),
+      });
     }
     // Current month days
     for (let i = 1; i <= totalDays; i++) {
@@ -84,7 +111,11 @@ function StudentCalendar() {
     const totalSlots = 42; // 6 rows of 7 days
     const nextMonthDaysNeeded = totalSlots - days.length;
     for (let i = 1; i <= nextMonthDaysNeeded; i++) {
-      days.push({ day: i, isCurrentMonth: false, date: new Date(month === 11 ? year + 1 : year, month === 11 ? 0 : month + 1, i) });
+      days.push({
+        day: i,
+        isCurrentMonth: false,
+        date: new Date(month === 11 ? year + 1 : year, month === 11 ? 0 : month + 1, i),
+      });
     }
     return days;
   }, [year, month, firstDayIndex, totalDays, prevMonthTotalDays]);
@@ -130,11 +161,20 @@ function StudentCalendar() {
 
   const isToday = (d: Date) => {
     const today = new Date();
-    return d.getDate() === today.getDate() && d.getMonth() === today.getMonth() && d.getFullYear() === today.getFullYear();
+    return (
+      d.getDate() === today.getDate() &&
+      d.getMonth() === today.getMonth() &&
+      d.getFullYear() === today.getFullYear()
+    );
   };
 
   const isSelected = (d: Date) => {
-    return selectedDate && d.getDate() === selectedDate.getDate() && d.getMonth() === selectedDate.getMonth() && d.getFullYear() === selectedDate.getFullYear();
+    return (
+      selectedDate &&
+      d.getDate() === selectedDate.getDate() &&
+      d.getMonth() === selectedDate.getMonth() &&
+      d.getFullYear() === selectedDate.getFullYear()
+    );
   };
 
   const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
@@ -175,7 +215,9 @@ function StudentCalendar() {
 
           <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-muted-foreground mb-2">
             {daysOfWeek.map((d) => (
-              <div key={d} className="py-2">{d}</div>
+              <div key={d} className="py-2">
+                {d}
+              </div>
             ))}
           </div>
 
@@ -193,16 +235,18 @@ function StudentCalendar() {
                     active
                       ? "border-primary/50 bg-primary/10"
                       : isCurrentMonth
-                      ? "border-border/40 hover:border-border-hover hover:bg-secondary/20"
-                      : "border-transparent text-muted-foreground/40 opacity-40 hover:border-border/20"
+                        ? "border-border/40 hover:border-border-hover hover:bg-secondary/20"
+                        : "border-transparent text-muted-foreground/40 opacity-40 hover:border-border/20"
                   }`}
                 >
-                  <span className={`text-xs font-semibold rounded-md h-5 min-w-5 flex items-center justify-center ${
-                    today ? "bg-primary text-primary-foreground font-bold" : ""
-                  }`}>
+                  <span
+                    className={`text-xs font-semibold rounded-md h-5 min-w-5 flex items-center justify-center ${
+                      today ? "bg-primary text-primary-foreground font-bold" : ""
+                    }`}
+                  >
                     {day}
                   </span>
-                  
+
                   <div className="w-full flex flex-wrap gap-1 mt-1.5">
                     {dayEvents.map((de, di) => (
                       <span
@@ -224,13 +268,18 @@ function StudentCalendar() {
         <div className="space-y-4">
           <GlassCard className="p-5">
             <h3 className="text-sm font-semibold text-muted-foreground mb-4">
-              Schedule for {selectedDate ? selectedDate.toLocaleDateString(undefined, { dateStyle: "long" }) : "Selected Date"}
+              Schedule for{" "}
+              {selectedDate
+                ? selectedDate.toLocaleDateString(undefined, { dateStyle: "long" })
+                : "Selected Date"}
             </h3>
 
             {selectedDateEvents.length === 0 ? (
               <div className="text-center py-10">
                 <Calendar className="mx-auto h-8 w-8 text-muted-foreground/30 mb-3" />
-                <p className="text-xs text-muted-foreground">No events or deadlines for this day.</p>
+                <p className="text-xs text-muted-foreground">
+                  No events or deadlines for this day.
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -238,16 +287,25 @@ function StudentCalendar() {
                   <div
                     key={de.id}
                     className={`p-4 rounded-xl border flex flex-col gap-2 ${
-                      de.type === "deadline" ? "border-destructive/30 bg-destructive/5" : "border-border bg-secondary/15"
+                      de.type === "deadline"
+                        ? "border-destructive/30 bg-destructive/5"
+                        : "border-border bg-secondary/15"
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <span className="text-sm font-bold text-foreground leading-tight">{de.title}</span>
-                      <Badge variant={de.type === "deadline" ? "destructive" : "default"} className="text-[9px] px-1.5 uppercase shrink-0">
+                      <span className="text-sm font-bold text-foreground leading-tight">
+                        {de.title}
+                      </span>
+                      <Badge
+                        variant={de.type === "deadline" ? "destructive" : "default"}
+                        className="text-[9px] px-1.5 uppercase shrink-0"
+                      >
                         {de.type}
                       </Badge>
                     </div>
-                    <span className="text-[10px] text-muted-foreground font-medium">{de.courseName}</span>
+                    <span className="text-[10px] text-muted-foreground font-medium">
+                      {de.courseName}
+                    </span>
                     <p className="text-xs text-muted-foreground leading-normal">{de.description}</p>
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground mt-1">
                       <Clock className="h-3.5 w-3.5" />

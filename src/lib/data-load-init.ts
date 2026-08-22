@@ -1,44 +1,66 @@
-import { useData, normalizeCertificateList } from './data-store';
+import { useData, normalizeCertificateList } from "./data-store";
 
-let lastRefreshTime = 0;
+const cacheTimestamps: Record<string, number> = {};
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds cache TTL per endpoint
 let isRefreshing = false;
 
-export async function refreshData(force = false) {
-  if (typeof window === 'undefined') return;
+const ALL_ENDPOINTS: Record<string, string> = {
+  courses: "/api/courses",
+  users: "/api/users",
+  certificates: "/api/certificates",
+  assessments: "/api/assessments",
+  submissions: "/api/submissions",
+  progress: "/api/progress",
+  notifications: "/api/notifications",
+  messages: "/api/messages",
+  events: "/api/events",
+  announcements: "/api/announcements",
+  discussions: "/api/discussions",
+  discussionReplies: "/api/discussion-replies",
+  videoCheckpoints: "/api/video-checkpoints",
+  checkpointProgress: "/api/checkpoint-progress",
+};
+
+export async function refreshData(force = false, requestedKeys?: string[]) {
+  if (typeof window === "undefined") return;
 
   const now = Date.now();
-  if (!force && (isRefreshing || now - lastRefreshTime < 2000)) {
+  if (!force && isRefreshing) {
     return;
   }
   isRefreshing = true;
-  lastRefreshTime = now;
 
-  const endpoints = [
-    { url: '/api/courses', key: 'courses' },
-    { url: '/api/users', key: 'users' },
-    { url: '/api/certificates', key: 'certificates' },
-    { url: '/api/assessments', key: 'assessments' },
-    { url: '/api/submissions', key: 'submissions' },
-    { url: '/api/progress', key: 'progress' },
-    { url: '/api/notifications', key: 'notifications' },
-    { url: '/api/messages', key: 'messages' },
-    { url: '/api/events', key: 'events' },
-    { url: '/api/announcements', key: 'announcements' },
-    { url: '/api/discussions', key: 'discussions' },
-    { url: '/api/discussion-replies', key: 'discussionReplies' },
-    { url: '/api/video-checkpoints', key: 'videoCheckpoints' },
-    { url: '/api/checkpoint-progress', key: 'checkpointProgress' }
-  ];
+  const isAuth = !!(
+    localStorage.getItem("itech-auth-user") ||
+    localStorage.getItem("itech-auth-token") ||
+    document.cookie.includes("auth_token=")
+  );
+
+  const keysToFetch = (requestedKeys || (isAuth ? Object.keys(ALL_ENDPOINTS) : ["courses"])).filter(
+    (key) => {
+      if (force) return true;
+      const lastFetched = cacheTimestamps[key] || 0;
+      return now - lastFetched > CACHE_TTL_MS;
+    },
+  );
+
+  if (keysToFetch.length === 0) {
+    isRefreshing = false;
+    return;
+  }
 
   try {
     await Promise.all(
-      endpoints.map(async ({ url, key }) => {
+      keysToFetch.map(async (key) => {
+        const url = ALL_ENDPOINTS[key];
+        if (!url) return;
         try {
-          const res = await fetch(url);
+          const res = await fetch(url, { credentials: "include" });
           if (res.ok) {
             const json = await res.json();
-            if (json[key]) {
-              if (key === 'certificates') {
+            cacheTimestamps[key] = Date.now();
+            if (json[key] !== undefined) {
+              if (key === "certificates") {
                 const incoming = normalizeCertificateList(json.certificates || []);
                 const incomingIds = new Set(incoming.map((c) => c.id));
                 useData.setState((s) => {
@@ -53,20 +75,22 @@ export async function refreshData(force = false) {
         } catch (err) {
           console.error(`Failed to load ${key} from ${url}`, err);
         }
-      })
+      }),
     );
 
-    // Separately load extra attempts (map format, not array)
-    try {
-      const res = await fetch('/api/extra-attempts');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.extraAttempts && typeof json.extraAttempts === 'object') {
-          useData.getState().loadExtraAttempts(json.extraAttempts);
+    // Separately load extra attempts for authenticated users if assessments requested or stale
+    if (isAuth && (force || keysToFetch.includes("assessments"))) {
+      try {
+        const res = await fetch("/api/extra-attempts", { credentials: "include" });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.extraAttempts && typeof json.extraAttempts === "object") {
+            useData.getState().loadExtraAttempts(json.extraAttempts);
+          }
         }
+      } catch (err) {
+        console.error("Failed to load extra attempts", err);
       }
-    } catch (err) {
-      console.error('Failed to load extra attempts', err);
     }
   } finally {
     isRefreshing = false;
@@ -74,7 +98,7 @@ export async function refreshData(force = false) {
 }
 
 // Run initially on import
-if (typeof window !== 'undefined') {
+if (typeof window !== "undefined") {
   refreshData();
 }
 

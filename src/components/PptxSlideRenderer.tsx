@@ -73,6 +73,66 @@ function pullText(xmlBlock: string): string {
 // ─── PPTX parser ─────────────────────────────────────────────────────────────
 
 async function parsePptx(src: string): Promise<ParsedSlide[]> {
+  // If src is empty, "#", or placeholder, return built-in multi-slide presentation
+  if (!src || src.trim() === "" || src.trim() === "#" || src === "sample") {
+    return [
+      {
+        index: 1,
+        title: "Course Presentation Slide Deck",
+        bullets: [
+          "Welcome to this interactive presentation module.",
+          "Use the toolbar buttons or left/right arrow keys to browse through slides.",
+          "This presentation viewer is copy-protected and download-restricted.",
+          "Click the Fullscreen button above to view slides in full screen dark mode."
+        ],
+        images: []
+      },
+      {
+        index: 2,
+        title: "Module Learning Objectives",
+        bullets: [
+          "Master core architectural principles and technical concepts.",
+          "Analyze component workflows and system performance metrics.",
+          "Implement industry best practices for security and maintainability.",
+          "Review practical case studies and enterprise deployment patterns."
+        ],
+        images: []
+      },
+      {
+        index: 3,
+        title: "System Architecture & Flow",
+        bullets: [
+          "Client Layer: React 19 components with type-safe state management.",
+          "API Gateway: Fast server endpoints and request authentication.",
+          "Storage Layer: Secure cloud file buckets with high-resolution slide caching.",
+          "Protection Layer: Event listeners, print shields, and copy prevention."
+        ],
+        images: []
+      },
+      {
+        index: 4,
+        title: "Implementation Best Practices",
+        bullets: [
+          "Enforce strict TypeScript interfaces across all module boundaries.",
+          "Keep component responsibilities modular and decoupled.",
+          "Use responsive breakpoints and dark-mode styling tokens.",
+          "Sanitize external input and sanitize user-generated rich text."
+        ],
+        images: []
+      },
+      {
+        index: 5,
+        title: "Summary & Completion",
+        bullets: [
+          "Review key takeaways from this lecture presentation.",
+          "Proceed to the next lesson item or interactive laboratory exercise.",
+          "Lesson completion is automatically recorded upon reaching this final slide."
+        ],
+        images: []
+      }
+    ];
+  }
+
   // 1. Get raw bytes — either from data URL or by fetching
   let buf: ArrayBuffer;
 

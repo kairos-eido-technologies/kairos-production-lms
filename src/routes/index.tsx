@@ -27,7 +27,10 @@ export const Route = createFileRoute("/")({
         content:
           "iTech Academy — Tirunelveli's #1 tech training institute. 30+ courses, Pearson VUE authorized test centre, ISO 9001:2015 certified, 100% placement assistance.",
       },
-      { property: "og:title", content: "iTech Academy Tirunelveli | Tech Training & Certifications" },
+      {
+        property: "og:title",
+        content: "iTech Academy Tirunelveli | Tech Training & Certifications",
+      },
       {
         property: "og:description",
         content:

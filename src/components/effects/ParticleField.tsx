@@ -66,7 +66,10 @@ export default function ParticleField({ density = 1, burst = false, className }:
     const target = new THREE.Vector2(0, 0);
 
     const onPointerMove = (e: PointerEvent) => {
-      target.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+      target.set(
+        (e.clientX / window.innerWidth) * 2 - 1,
+        -(e.clientY / window.innerHeight) * 2 + 1,
+      );
     };
     window.addEventListener("pointermove", onPointerMove);
 

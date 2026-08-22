@@ -1,8 +1,15 @@
 // iTech Academy — types only. Authentication and data now rely on backend services.
 export type Role = "admin" | "teacher" | "student";
 export type ContentType =
-  | "video" | "pdf" | "reading" | "lab" | "link" | "download"
-  | "image" | "ppt" | "assessment";
+  | "video"
+  | "pdf"
+  | "reading"
+  | "lab"
+  | "link"
+  | "download"
+  | "image"
+  | "ppt"
+  | "assessment";
 
 export interface User {
   id: string;
@@ -68,6 +75,8 @@ export interface Course {
   sections: Section[];
   showInPreview?: boolean;
   previewVideoUrl?: string;
+  lockProgression?: boolean;
+  sequentialProgression?: boolean;
   badgeTag?: string;
   featuredBadgeText?: string;
   durationText?: string;
@@ -103,7 +112,7 @@ export interface Certificate {
 
 export interface NotificationItem {
   id: string;
-  userId: string;          // target user
+  userId: string; // target user
   title: string;
   message: string;
   createdAt: string;

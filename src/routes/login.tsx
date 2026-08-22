@@ -30,7 +30,8 @@ import { toast } from "sonner";
 
 /** Animated SVG circuit background */
 function CircuitTraces() {
-  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const reduced =
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   const paths = [
     "M0 120 H180 L230 70 H460 L520 130 H820",
     "M0 300 H120 L190 230 H520 L580 300 H1000",
@@ -54,11 +55,27 @@ function CircuitTraces() {
           initial={{ pathLength: reduced ? 1 : 0, opacity: 0 }}
           animate={{ pathLength: 1, opacity: 0.8 }}
           transition={{ duration: reduced ? 0.01 : 3, delay: i * 0.3, ease: "easeInOut" }}
-          style={{ filter: "drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 60%, transparent))" }}
+          style={{
+            filter: "drop-shadow(0 0 6px color-mix(in oklab, var(--primary) 60%, transparent))",
+          }}
         />
       ))}
-      {[[230, 70], [520, 130], [190, 230], [580, 300], [360, 420], [700, 620]].map(([cx, cy]) => (
-        <circle key={`${cx}-${cy}`} cx={cx} cy={cy} r="3.5" fill="var(--primary-glow)" opacity="0.75" />
+      {[
+        [230, 70],
+        [520, 130],
+        [190, 230],
+        [580, 300],
+        [360, 420],
+        [700, 620],
+      ].map(([cx, cy]) => (
+        <circle
+          key={`${cx}-${cy}`}
+          cx={cx}
+          cy={cy}
+          r="3.5"
+          fill="var(--primary-glow)"
+          opacity="0.75"
+        />
       ))}
     </svg>
   );
@@ -74,7 +91,10 @@ const BENEFITS = [
 ];
 
 /** Glass input wrapper */
-const GlassInput = ({ className = "", ...props }: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) => (
+const GlassInput = ({
+  className = "",
+  ...props
+}: React.InputHTMLAttributes<HTMLInputElement> & { className?: string }) => (
   <input
     {...props}
     className={`w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 backdrop-blur-md focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/30 transition-all h-11 ${className}`}
@@ -82,7 +102,17 @@ const GlassInput = ({ className = "", ...props }: React.InputHTMLAttributes<HTML
 );
 
 function LoginPage() {
-  const { user, login, register, verifyEmail, resendCode, initializeSession, forgotPassword, resetPassword, isLoading } = useAuth();
+  const {
+    user,
+    login,
+    register,
+    verifyEmail,
+    resendCode,
+    initializeSession,
+    forgotPassword,
+    resetPassword,
+    isLoading,
+  } = useAuth();
   const nav = useNavigate();
   const [mode, setMode] = useState<"login" | "signup" | "forgot" | "verify">("login");
   const [forgotStep, setForgotStep] = useState<"send-code" | "reset-pwd">("send-code");
@@ -97,8 +127,12 @@ function LoginPage() {
   const [newConfirm, setNewConfirm] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => { initializeSession(); }, [initializeSession]);
-  useEffect(() => { if (user && mode !== "verify") nav({ to: `/${user.role}` as any }); }, [user, nav, mode]);
+  useEffect(() => {
+    initializeSession();
+  }, [initializeSession]);
+  useEffect(() => {
+    if (user && mode !== "verify") nav({ to: `/${user.role}` as any });
+  }, [user, nav, mode]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -122,36 +156,71 @@ function LoginPage() {
 
     if (mode === "forgot") {
       if (forgotStep === "send-code") {
-        if (!email.trim()) { setError("Email is required."); return; }
+        if (!email.trim()) {
+          setError("Email is required.");
+          return;
+        }
         const res = await forgotPassword(email);
-        if (!res.ok) { setError(res.error); toast.error(res.error); return; }
+        if (!res.ok) {
+          setError(res.error);
+          toast.error(res.error);
+          return;
+        }
         toast.success("Password reset code sent to your email!");
         setForgotStep("reset-pwd");
         return;
       }
       if (forgotStep === "reset-pwd") {
-        if (!resetCode.trim() || !newPwd || !newConfirm) { setError("All fields are required."); return; }
-        if (newPwd !== newConfirm) { setError("Passwords do not match."); return; }
+        if (!resetCode.trim() || !newPwd || !newConfirm) {
+          setError("All fields are required.");
+          return;
+        }
+        if (newPwd !== newConfirm) {
+          setError("Passwords do not match.");
+          return;
+        }
         const res = await resetPassword({ email, code: resetCode, newPassword: newPwd });
-        if (!res.ok) { setError(res.error); toast.error(res.error); return; }
+        if (!res.ok) {
+          setError(res.error);
+          toast.error(res.error);
+          return;
+        }
         toast.success("Password reset successfully! Please sign in.");
-        setMode("login"); setForgotStep("send-code"); setResetCode(""); setNewPwd(""); setNewConfirm("");
+        setMode("login");
+        setForgotStep("send-code");
+        setResetCode("");
+        setNewPwd("");
+        setNewConfirm("");
         return;
       }
     }
 
     if (mode === "signup") {
-      if (pwd !== confirm) { setError("Passwords do not match."); return; }
+      if (pwd !== confirm) {
+        setError("Passwords do not match.");
+        return;
+      }
       const res = await register({ name, email, password: pwd, phone });
-      if (!res.ok) { setError(res.error); toast.error(res.error); return; }
+      if (!res.ok) {
+        setError(res.error);
+        toast.error(res.error);
+        return;
+      }
       toast.success("Account created — activation code sent to your email!");
       setMode("verify");
       return;
     }
 
-    if (!email.trim() || !pwd) { setError("Email and password are required."); return; }
+    if (!email.trim() || !pwd) {
+      setError("Email and password are required.");
+      return;
+    }
     const res = await login(email, pwd);
-    if (!res.ok) { setError(res.error); toast.error(res.error); return; }
+    if (!res.ok) {
+      setError(res.error);
+      toast.error(res.error);
+      return;
+    }
     toast.success("Welcome back!");
     nav({ to: `/${res.role}` as any });
   };
@@ -186,7 +255,13 @@ function LoginPage() {
           <Logo />
           <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/[0.08] px-3 py-1 text-[11px] font-mono uppercase tracking-[0.18em] text-primary backdrop-blur">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-            {mode === "verify" ? "Account Activation" : mode === "forgot" ? "Password Recovery" : mode === "signup" ? "Join the Academy" : "Secure Portal"}
+            {mode === "verify"
+              ? "Account Activation"
+              : mode === "forgot"
+                ? "Password Recovery"
+                : mode === "signup"
+                  ? "Join the Academy"
+                  : "Secure Portal"}
           </div>
         </div>
 
@@ -197,7 +272,8 @@ function LoginPage() {
             background: "color-mix(in oklab, var(--card) 55%, transparent)",
             backdropFilter: "blur(24px) saturate(160%)",
             WebkitBackdropFilter: "blur(24px) saturate(160%)",
-            boxShadow: "0 0 0 1px rgba(255,255,255,0.05) inset, 0 32px 64px -16px rgba(0,0,0,0.4), 0 0 60px -20px color-mix(in oklab, var(--primary) 20%, transparent)",
+            boxShadow:
+              "0 0 0 1px rgba(255,255,255,0.05) inset, 0 32px 64px -16px rgba(0,0,0,0.4), 0 0 60px -20px color-mix(in oklab, var(--primary) 20%, transparent)",
           }}
         >
           {/* Heading */}
@@ -206,19 +282,23 @@ function LoginPage() {
               {mode === "verify"
                 ? "Verify your email"
                 : mode === "forgot"
-                ? forgotStep === "send-code" ? "Forgot password" : "Reset password"
-                : mode === "login" ? "Welcome back" : "Create your account"}
+                  ? forgotStep === "send-code"
+                    ? "Forgot password"
+                    : "Reset password"
+                  : mode === "login"
+                    ? "Welcome back"
+                    : "Create your account"}
             </h1>
             <p className="mt-1 text-sm text-muted-foreground">
               {mode === "verify"
                 ? `Enter the 6-digit activation code sent to ${email || "your email"}.`
                 : mode === "forgot"
-                ? forgotStep === "send-code"
-                  ? "Enter your email to receive a reset code."
-                  : "Enter the code we sent and set a new password."
-                : mode === "login"
-                ? "Sign in to access your iTech Academy dashboard."
-                : "Join iTech Academy and start your tech journey today."}
+                  ? forgotStep === "send-code"
+                    ? "Enter your email to receive a reset code."
+                    : "Enter the code we sent and set a new password."
+                  : mode === "login"
+                    ? "Sign in to access your iTech Academy dashboard."
+                    : "Join iTech Academy and start your tech journey today."}
             </p>
           </div>
 
@@ -236,18 +316,28 @@ function LoginPage() {
               />
               <button
                 type="button"
-                onClick={() => { setMode("login"); setError(null); }}
+                onClick={() => {
+                  setMode("login");
+                  setError(null);
+                }}
                 className={`relative z-10 flex-1 h-9 rounded-lg text-sm font-semibold transition-colors duration-200 ${
-                  mode === "login" ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  mode === "login"
+                    ? "text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Sign in
               </button>
               <button
                 type="button"
-                onClick={() => { setMode("signup"); setError(null); }}
+                onClick={() => {
+                  setMode("signup");
+                  setError(null);
+                }}
                 className={`relative z-10 flex-1 h-9 rounded-lg text-sm font-semibold transition-colors duration-200 ${
-                  mode === "signup" ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+                  mode === "signup"
+                    ? "text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 Create account
@@ -260,7 +350,12 @@ function LoginPage() {
             {mode === "verify" ? (
               <div className="space-y-3">
                 <div className="space-y-1.5">
-                  <Label htmlFor="verify-code" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">6-Digit Verification Code</Label>
+                  <Label
+                    htmlFor="verify-code"
+                    className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                  >
+                    6-Digit Verification Code
+                  </Label>
                   <div className="relative">
                     <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-primary pointer-events-none" />
                     <GlassInput
@@ -288,7 +383,9 @@ function LoginPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => { nav({ to: "/student" }); }}
+                    onClick={() => {
+                      nav({ to: "/student" });
+                    }}
                     className="text-muted-foreground hover:text-foreground"
                   >
                     Skip for now
@@ -298,40 +395,101 @@ function LoginPage() {
             ) : mode === "forgot" ? (
               forgotStep === "send-code" ? (
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email address</Label>
+                  <Label
+                    htmlFor="email"
+                    className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                  >
+                    Email address
+                  </Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                    <GlassInput id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="pl-9" />
+                    <GlassInput
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="pl-9"
+                    />
                   </div>
                 </div>
               ) : (
                 <>
                   <div className="space-y-1.5">
-                    <Label htmlFor="email-display" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email address</Label>
+                    <Label
+                      htmlFor="email-display"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      Email address
+                    </Label>
                     <div className="relative">
                       <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                      <GlassInput id="email-display" type="email" value={email} disabled className="pl-9 opacity-60 cursor-not-allowed" />
+                      <GlassInput
+                        id="email-display"
+                        type="email"
+                        value={email}
+                        disabled
+                        className="pl-9 opacity-60 cursor-not-allowed"
+                      />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="reset-code" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Verification Code</Label>
+                    <Label
+                      htmlFor="reset-code"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      Verification Code
+                    </Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                      <GlassInput id="reset-code" type="text" maxLength={6} value={resetCode} onChange={(e) => setResetCode(e.target.value)} placeholder="Enter 6-digit code" className="pl-9 font-mono tracking-widest text-center" />
+                      <GlassInput
+                        id="reset-code"
+                        type="text"
+                        maxLength={6}
+                        value={resetCode}
+                        onChange={(e) => setResetCode(e.target.value)}
+                        placeholder="Enter 6-digit code"
+                        className="pl-9 font-mono tracking-widest text-center"
+                      />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="new-pwd" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">New Password</Label>
+                    <Label
+                      htmlFor="new-pwd"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      New Password
+                    </Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                      <GlassInput id="new-pwd" type="password" value={newPwd} onChange={(e) => setNewPwd(e.target.value)} placeholder="••••••••" className="pl-9" />
+                      <GlassInput
+                        id="new-pwd"
+                        type="password"
+                        value={newPwd}
+                        onChange={(e) => setNewPwd(e.target.value)}
+                        placeholder="••••••••"
+                        className="pl-9"
+                      />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="new-confirm" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Confirm New Password</Label>
+                    <Label
+                      htmlFor="new-confirm"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      Confirm New Password
+                    </Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                      <GlassInput id="new-confirm" type="password" value={newConfirm} onChange={(e) => setNewConfirm(e.target.value)} placeholder="••••••••" className="pl-9" />
+                      <GlassInput
+                        id="new-confirm"
+                        type="password"
+                        value={newConfirm}
+                        onChange={(e) => setNewConfirm(e.target.value)}
+                        placeholder="••••••••"
+                        className="pl-9"
+                      />
                     </div>
                   </div>
                 </>
@@ -341,45 +499,112 @@ function LoginPage() {
                 {mode === "signup" && (
                   <>
                     <div className="space-y-1.5">
-                      <Label htmlFor="name" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Full name</Label>
-                      <GlassInput id="name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" />
+                      <Label
+                        htmlFor="name"
+                        className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                      >
+                        Full name
+                      </Label>
+                      <GlassInput
+                        id="name"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder="Your name"
+                      />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="phone" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Phone number</Label>
+                      <Label
+                        htmlFor="phone"
+                        className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                      >
+                        Phone number
+                      </Label>
                       <div className="relative">
                         <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                        <GlassInput id="phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91 99999 99999" className="pl-9" />
+                        <GlassInput
+                          id="phone"
+                          value={phone}
+                          onChange={(e) => setPhone(e.target.value)}
+                          placeholder="+91 99999 99999"
+                          className="pl-9"
+                        />
                       </div>
                     </div>
                   </>
                 )}
                 <div className="space-y-1.5">
-                  <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Email</Label>
+                  <Label
+                    htmlFor="email"
+                    className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                  >
+                    Email
+                  </Label>
                   <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                    <GlassInput id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className="pl-9" />
+                    <GlassInput
+                      id="email"
+                      type="email"
+                      autoComplete="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@example.com"
+                      className="pl-9"
+                    />
                   </div>
                 </div>
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
-                    <Label htmlFor="pwd" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Password</Label>
+                    <Label
+                      htmlFor="pwd"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      Password
+                    </Label>
                     {mode === "login" && (
-                      <button type="button" onClick={() => { setMode("forgot"); setForgotStep("send-code"); setError(null); }} className="text-xs text-primary hover:underline font-medium transition-colors">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode("forgot");
+                          setForgotStep("send-code");
+                          setError(null);
+                        }}
+                        className="text-xs text-primary hover:underline font-medium transition-colors"
+                      >
                         Forgot password?
                       </button>
                     )}
                   </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                    <GlassInput id="pwd" type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} value={pwd} onChange={(e) => setPwd(e.target.value)} placeholder="••••••••" className="pl-9" />
+                    <GlassInput
+                      id="pwd"
+                      type="password"
+                      autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                      value={pwd}
+                      onChange={(e) => setPwd(e.target.value)}
+                      placeholder="••••••••"
+                      className="pl-9"
+                    />
                   </div>
                 </div>
                 {mode === "signup" && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="confirm" className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Confirm password</Label>
+                    <Label
+                      htmlFor="confirm"
+                      className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+                    >
+                      Confirm password
+                    </Label>
                     <div className="relative">
                       <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground/60 pointer-events-none" />
-                      <GlassInput id="confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" className="pl-9" />
+                      <GlassInput
+                        id="confirm"
+                        type="password"
+                        value={confirm}
+                        onChange={(e) => setConfirm(e.target.value)}
+                        placeholder="••••••••"
+                        className="pl-9"
+                      />
                     </div>
                   </div>
                 )}
@@ -408,8 +633,12 @@ function LoginPage() {
                   {mode === "verify"
                     ? "Activate Account"
                     : mode === "forgot"
-                    ? forgotStep === "send-code" ? "Send Reset Code" : "Reset Password"
-                    : mode === "login" ? "Sign in to Dashboard" : "Create Account"}
+                      ? forgotStep === "send-code"
+                        ? "Send Reset Code"
+                        : "Reset Password"
+                      : mode === "login"
+                        ? "Sign in to Dashboard"
+                        : "Create Account"}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </span>
               )}
@@ -418,14 +647,17 @@ function LoginPage() {
             {mode === "forgot" && (
               <button
                 type="button"
-                onClick={() => { setMode("login"); setError(null); setForgotStep("send-code"); }}
+                onClick={() => {
+                  setMode("login");
+                  setError(null);
+                  setForgotStep("send-code");
+                }}
                 className="w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors pt-2 block"
               >
                 Back to sign in
               </button>
             )}
           </form>
-
         </div>
 
         {/* Benefits list below card */}

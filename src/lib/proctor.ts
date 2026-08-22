@@ -69,7 +69,10 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
     if (typeof window === "undefined" || !navigator.mediaDevices?.getUserMedia) return;
     try {
       setCameraError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: 320, height: 240 },
+        audio: false,
+      });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -101,7 +104,12 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
   // Keep camera stream bound to video element as soon as it mounts in the DOM
   useEffect(() => {
     if (typeof window === "undefined") return;
-    if (cameraReady && streamRef.current && videoRef.current && videoRef.current.srcObject !== streamRef.current) {
+    if (
+      cameraReady &&
+      streamRef.current &&
+      videoRef.current &&
+      videoRef.current.srcObject !== streamRef.current
+    ) {
       videoRef.current.srcObject = streamRef.current;
       videoRef.current.play().catch(() => {});
     }
@@ -154,7 +162,7 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
               const r = frame.data[i];
               const g = frame.data[i + 1];
               const b = frame.data[i + 2];
-              
+
               if (r > 90 && g > 35 && b > 15 && r > g && r > b && Math.abs(r - g) > 12) {
                 skinPixels++;
               }
@@ -173,8 +181,7 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
             if (skinPixels > 20000 && now - lastFaceCheckAtRef.current > 12000) {
               lastFaceCheckAtRef.current = now;
               log("multiple_faces", "Multiple faces or extra person detected");
-            }
-            else if (skinPixels < 1200 && now - lastFaceCheckAtRef.current > 12000) {
+            } else if (skinPixels < 1200 && now - lastFaceCheckAtRef.current > 12000) {
               lastFaceCheckAtRef.current = now;
               log("camera_motion", "Face absent or student turned away from camera");
             }
@@ -241,7 +248,14 @@ export function useProctor({ enabled, camera }: UseProctorOpts) {
       if (
         e.key === "Meta" ||
         e.key === "Alt" ||
-        (e.ctrlKey && (e.key === "c" || e.key === "v" || e.key === "tab" || e.key === "w" || e.key === "n" || e.key === "p" || e.key === "s"))
+        (e.ctrlKey &&
+          (e.key === "c" ||
+            e.key === "v" ||
+            e.key === "tab" ||
+            e.key === "w" ||
+            e.key === "n" ||
+            e.key === "p" ||
+            e.key === "s"))
       ) {
         log("key_meta", e.key);
       }

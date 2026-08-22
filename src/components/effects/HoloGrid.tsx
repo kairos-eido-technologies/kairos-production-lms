@@ -20,7 +20,11 @@ export function HoloGrid({ className = "" }: { className?: string }) {
   }, [reduced]);
 
   return (
-    <div ref={ref} aria-hidden="true" className={`pointer-events-none absolute inset-0 ${className}`}>
+    <div
+      ref={ref}
+      aria-hidden="true"
+      className={`pointer-events-none absolute inset-0 ${className}`}
+    >
       <div
         className="absolute inset-0 opacity-[0.5]"
         style={{

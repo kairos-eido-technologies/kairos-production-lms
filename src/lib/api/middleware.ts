@@ -1,18 +1,9 @@
 import { createMiddleware } from "@tanstack/react-start";
 import { verifyToken } from "../auth";
-
-function getTokenFromRequest(request: Request): string | null {
-  const authHeader = request.headers.get("authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.replace("Bearer ", "");
-  }
-
-  const cookieHeader = request.headers.get("cookie") ?? "";
-  const match = cookieHeader.match(/(?:^|; )auth_token=([^;]+)/);
-  return match?.[1] ?? null;
-}
+import { getTokenFromRequest } from "./auth-utils";
 
 export const withAuth = createMiddleware().server(async ({ next, request }: any) => {
+
   const token = getTokenFromRequest(request);
 
   if (!token) {

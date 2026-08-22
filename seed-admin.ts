@@ -6,7 +6,9 @@ import { users } from "./src/lib/db/schema";
 import { eq } from "drizzle-orm";
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || "https://pzmtbnsquhlplakcaezl.supabase.co";
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6bXRibnNxdWhscGxha2NhZXpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NjAxNzYsImV4cCI6MjEwMjEzNjE3Nn0.ENqDZPXBDuS2FtRJt2Z6pLMHjVm1tqRMDKm-Y1EkM5w";
+const SUPABASE_ANON_KEY =
+  process.env.VITE_SUPABASE_ANON_KEY ||
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InB6bXRibnNxdWhscGxha2NhZXpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY1NjAxNzYsImV4cCI6MjEwMjEzNjE3Nn0.ENqDZPXBDuS2FtRJt2Z6pLMHjVm1tqRMDKm-Y1EkM5w";
 
 async function seedAdmin() {
   console.log("🔐 Seeding Admin account...");
@@ -37,7 +39,8 @@ async function seedAdmin() {
         email: adminEmail,
         passwordHash: adminPasswordHash,
         role: "admin",
-        avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+        avatar:
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
         status: "active",
         joinedAt: new Date(),
         isEmailVerified: true,
@@ -48,7 +51,9 @@ async function seedAdmin() {
     printCredentials();
     process.exit(0);
   } catch (dbErr: any) {
-    console.warn("⚠️ Postgres direct connection timed out / blocked. Retrying via Supabase HTTPS API...");
+    console.warn(
+      "⚠️ Postgres direct connection timed out / blocked. Retrying via Supabase HTTPS API...",
+    );
 
     // Strategy 2: Fallback to Supabase HTTPS REST API (Port 443 — works on any network)
     try {
@@ -60,13 +65,14 @@ async function seedAdmin() {
           email: adminEmail,
           password_hash: adminPasswordHash,
           role: "admin",
-          avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
+          avatar:
+            "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=250&q=80",
           status: "active",
           is_email_verified: true,
           phone: "+1 (555) 019-2834",
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "email" }
+        { onConflict: "email" },
       );
 
       if (error) {

@@ -7,14 +7,17 @@ interface RateLimitBucket {
 const ipBuckets = new Map<string, RateLimitBucket>();
 
 // Clean up stale IP records every 5 minutes
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, bucket] of ipBuckets.entries()) {
-    if (now - bucket.lastRefill > 5 * 60 * 1000) {
-      ipBuckets.delete(ip);
+setInterval(
+  () => {
+    const now = Date.now();
+    for (const [ip, bucket] of ipBuckets.entries()) {
+      if (now - bucket.lastRefill > 5 * 60 * 1000) {
+        ipBuckets.delete(ip);
+      }
     }
-  }
-}, 5 * 60 * 1000);
+  },
+  5 * 60 * 1000,
+);
 
 export interface RateLimitConfig {
   maxTokens: number; // Maximum burst allowed
@@ -50,7 +53,7 @@ export function getClientIp(request: Request): string {
 
 export function checkRateLimit(
   request: Request,
-  configOverride?: RateLimitConfig
+  configOverride?: RateLimitConfig,
 ): { allowed: boolean; remaining: number; retryAfter?: number } {
   const url = new URL(request.url);
   const ip = getClientIp(request);

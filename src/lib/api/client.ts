@@ -93,10 +93,7 @@ export async function getSession(): Promise<SessionResponse> {
   return data;
 }
 
-export async function fetchWithAuth(
-  url: string,
-  options: RequestInit = {}
-): Promise<Response> {
+export async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
   return fetch(url, {
     ...options,
     credentials: "include",

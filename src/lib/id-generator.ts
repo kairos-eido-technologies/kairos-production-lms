@@ -1,5 +1,6 @@
-import { supabase } from "./db/supabase-client";
-import { serverStore } from "./db/server-store";
+import { getDb } from "./db/client";
+import { users } from "./db/schema";
+import { eq } from "drizzle-orm";
 
 /**
  * Generates unique sequential IDs for users based on role:
@@ -7,33 +8,23 @@ import { serverStore } from "./db/server-store";
  * - Teachers: TCH-1, TCH-2, TCH-3...
  * - Admins: ADM-1, ADM-2, ADM-3...
  */
-export async function generateSequentialRoleId(role: "admin" | "teacher" | "student"): Promise<string> {
+export async function generateSequentialRoleId(
+  role: "admin" | "teacher" | "student",
+): Promise<string> {
   const prefix = role === "teacher" ? "TCH" : role === "admin" ? "ADM" : "STU";
   const existingIds: string[] = [];
 
-  // 1. Fetch existing user IDs for this role from Supabase
   try {
-    const { data: users } = await supabase.from("users").select("id").eq("role", role);
-    if (users) {
-      existingIds.push(...users.map((u: any) => u.id));
+    const db = getDb();
+    const roleUsers = await db.select({ id: users.id }).from(users).where(eq(users.role, role));
+    for (const u of roleUsers) {
+      if (u.id) existingIds.push(u.id);
     }
   } catch (err) {
-    console.warn("⚠️ Failed to fetch IDs from Supabase:", err);
+    console.warn("⚠️ Failed to fetch IDs from database:", err);
   }
 
-  // 2. Fetch existing user IDs for this role from serverStore
-  try {
-    const storeUsers = serverStore.getAllUsers();
-    for (const u of storeUsers) {
-      if (u.role === role) {
-        existingIds.push(u.id);
-      }
-    }
-  } catch (err) {
-    console.warn("⚠️ Failed to fetch IDs from serverStore:", err);
-  }
-
-  // 3. Extract highest numeric index
+  // Extract highest numeric index
   let maxNum = 0;
   const regex = new RegExp(`^${prefix}-?(\\d+)$`, "i");
 

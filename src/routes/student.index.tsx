@@ -1,7 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import {
-  LayoutDashboard, BookOpen, BarChart3, Award, MessageSquare, Calendar,
-} from "lucide-react";
+import { LayoutDashboard, BookOpen, BarChart3, Award, MessageSquare, Calendar } from "lucide-react";
 import { useAuth } from "@/lib/store";
 import { AppLaunchpad } from "@/components/AppLaunchpad";
 

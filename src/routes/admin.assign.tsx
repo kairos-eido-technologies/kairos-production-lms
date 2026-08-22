@@ -1,7 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, GraduationCap, BookOpen, Users, Calendar, ShieldCheck, Search, HelpCircle } from "lucide-react";
+import {
+  Plus,
+  Trash2,
+  GraduationCap,
+  BookOpen,
+  Users,
+  Calendar,
+  ShieldCheck,
+  Search,
+  HelpCircle,
+} from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { PageHeader, GlassCard, CourseThumbnail } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
@@ -9,15 +19,30 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
 } from "@/components/ui/table";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useData } from "@/lib/data-store";
 
@@ -56,7 +81,7 @@ function CourseAssignmentPanel() {
   // Available groups for students
   const availableGroups = useMemo(
     () => Array.from(new Set(studentsList.map((s) => s.group).filter(Boolean))) as string[],
-    [studentsList]
+    [studentsList],
   );
 
   // Student Search states
@@ -69,7 +94,7 @@ function CourseAssignmentPanel() {
 
   // Active Enrollments Table Pagination
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 10;
+  const PAGE_SIZE = 25;
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -83,7 +108,7 @@ function CourseAssignmentPanel() {
         s.name.toLowerCase().includes(q) ||
         s.email.toLowerCase().includes(q) ||
         s.id.toLowerCase().includes(q) ||
-        (s.group && s.group.toLowerCase().includes(q))
+        (s.group && s.group.toLowerCase().includes(q)),
     );
   }, [studentsList, studentSearch]);
 
@@ -95,7 +120,7 @@ function CourseAssignmentPanel() {
       (c) =>
         c.name.toLowerCase().includes(q) ||
         c.code.toLowerCase().includes(q) ||
-        c.description.toLowerCase().includes(q)
+        c.description.toLowerCase().includes(q),
     );
   }, [activeCourses, courseSearch]);
 
@@ -137,14 +162,14 @@ function CourseAssignmentPanel() {
         a.studentEmail.toLowerCase().includes(q) ||
         a.courseName.toLowerCase().includes(q) ||
         a.courseCode.toLowerCase().includes(q) ||
-        a.studentId.toLowerCase().includes(q)
+        a.studentId.toLowerCase().includes(q),
     );
   }, [activeEnrollments, searchQuery]);
 
   const totalPages = Math.max(1, Math.ceil(filteredEnrollments.length / PAGE_SIZE));
   const paginatedEnrollments = useMemo(
     () => filteredEnrollments.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
-    [filteredEnrollments, page]
+    [filteredEnrollments, page],
   );
 
   const handleAssign = async (e: React.FormEvent) => {
@@ -228,7 +253,9 @@ function CourseAssignmentPanel() {
         <GlassCard className="md:col-span-1 h-fit space-y-5">
           <div>
             <h3 className="font-semibold text-lg">New Enrollment</h3>
-            <p className="text-xs text-muted-foreground">Enroll a student in a course with lifetime or date-limited access.</p>
+            <p className="text-xs text-muted-foreground">
+              Enroll a student in a course with lifetime or date-limited access.
+            </p>
           </div>
 
           <form onSubmit={handleAssign} className="space-y-4">
@@ -286,48 +313,52 @@ function CourseAssignmentPanel() {
                   )}
                 </div>
 
-              {/* Floating Autocomplete Dropdown */}
-              <AnimatePresence>
-                {studentDropdownOpen && (
-                  <>
-                    <div 
-                      className="fixed inset-0 z-10" 
-                      onClick={() => setStudentDropdownOpen(false)} 
-                    />
-                    <motion.div
-                      initial={{ opacity: 0, y: 5 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: 5 }}
-                      className="absolute z-20 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-xl p-1.5"
-                    >
-                      {filteredStudentsForSelect.length === 0 ? (
-                        <div className="p-3 text-xs text-muted-foreground text-center">No students found</div>
-                      ) : (
-                        filteredStudentsForSelect.map((s) => (
-                          <button
-                            key={s.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedStudent(s.id);
-                              setStudentSearch(`${s.name} (${s.email})`);
-                              setStudentDropdownOpen(false);
-                            }}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-secondary/60 flex flex-col gap-0.5 transition ${
-                              selectedStudent === s.id ? "bg-primary/10 text-primary" : "text-foreground"
-                            }`}
-                          >
-                            <span className="font-semibold">{s.name}</span>
-                            <span className="text-[10px] text-muted-foreground font-mono">
-                              {s.email} · ID: {s.id}
-                            </span>
-                          </button>
-                        ))
-                      )}
-                    </motion.div>
-                  </>
-                )}
-              </AnimatePresence>
-            </div>
+                {/* Floating Autocomplete Dropdown */}
+                <AnimatePresence>
+                  {studentDropdownOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-10"
+                        onClick={() => setStudentDropdownOpen(false)}
+                      />
+                      <motion.div
+                        initial={{ opacity: 0, y: 5 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 5 }}
+                        className="absolute z-20 w-full mt-1 max-h-60 overflow-y-auto rounded-xl border border-border bg-card shadow-xl p-1.5"
+                      >
+                        {filteredStudentsForSelect.length === 0 ? (
+                          <div className="p-3 text-xs text-muted-foreground text-center">
+                            No students found
+                          </div>
+                        ) : (
+                          filteredStudentsForSelect.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStudent(s.id);
+                                setStudentSearch(`${s.name} (${s.email})`);
+                                setStudentDropdownOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-secondary/60 flex flex-col gap-0.5 transition ${
+                                selectedStudent === s.id
+                                  ? "bg-primary/10 text-primary"
+                                  : "text-foreground"
+                              }`}
+                            >
+                              <span className="font-semibold">{s.name}</span>
+                              <span className="text-[10px] text-muted-foreground font-mono">
+                                {s.email} · ID: {s.id}
+                              </span>
+                            </button>
+                          ))
+                        )}
+                      </motion.div>
+                    </>
+                  )}
+                </AnimatePresence>
+              </div>
             ) : (
               <div className="space-y-2">
                 <Label>Student Group / Cohort</Label>
@@ -346,7 +377,9 @@ function CourseAssignmentPanel() {
                       );
                     })}
                     {availableGroups.length === 0 && (
-                      <div className="p-2 text-xs text-muted-foreground text-center">No student groups found</div>
+                      <div className="p-2 text-xs text-muted-foreground text-center">
+                        No student groups found
+                      </div>
                     )}
                   </SelectContent>
                 </Select>
@@ -395,7 +428,9 @@ function CourseAssignmentPanel() {
                       className="absolute z-20 top-full left-0 right-0 mt-1 max-h-56 overflow-y-auto rounded-xl border border-border bg-popover p-1 shadow-lg space-y-1"
                     >
                       {filteredCoursesForSelect.length === 0 ? (
-                        <div className="p-3 text-xs text-muted-foreground text-center">No courses found</div>
+                        <div className="p-3 text-xs text-muted-foreground text-center">
+                          No courses found
+                        </div>
                       ) : (
                         filteredCoursesForSelect.map((c) => (
                           <button
@@ -407,7 +442,9 @@ function CourseAssignmentPanel() {
                               setCourseDropdownOpen(false);
                             }}
                             className={`w-full text-left px-3 py-2 rounded-lg text-xs hover:bg-secondary/60 flex flex-col gap-0.5 transition ${
-                              selectedCourse === c.id ? "bg-primary/10 text-primary" : "text-foreground"
+                              selectedCourse === c.id
+                                ? "bg-primary/10 text-primary"
+                                : "text-foreground"
                             }`}
                           >
                             <span className="font-semibold flex items-center gap-1.5">
@@ -481,9 +518,11 @@ function CourseAssignmentPanel() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h3 className="font-semibold text-lg">Active Enrollments</h3>
-              <p className="text-xs text-muted-foreground">List of all students currently enrolled in courses.</p>
+              <p className="text-xs text-muted-foreground">
+                List of all students currently enrolled in courses.
+              </p>
             </div>
-            
+
             <div className="relative w-full max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -514,23 +553,38 @@ function CourseAssignmentPanel() {
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-sm">{a.studentName}</div>
-                      <div className="text-[10px] text-muted-foreground font-light">{a.studentEmail}</div>
+                      <div className="text-[10px] text-muted-foreground font-light">
+                        {a.studentEmail}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <div className="font-medium text-sm flex items-center gap-2">
-                        <CourseThumbnail thumbnail={a.courseThumbnail} name={a.courseName} className="h-6 w-6" textClassName="text-xs" />
+                        <CourseThumbnail
+                          thumbnail={a.courseThumbnail}
+                          name={a.courseName}
+                          className="h-6 w-6"
+                          textClassName="text-xs"
+                        />
                         <span>{a.courseName}</span>
                       </div>
-                      <div className="text-[10px] text-muted-foreground font-light font-mono">{a.courseCode}</div>
+                      <div className="text-[10px] text-muted-foreground font-light font-mono">
+                        {a.courseCode}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {a.accessMode === "lifetime" ? (
-                        <Badge variant="outline" className="border-success/40 text-success bg-success/5 text-[10px] py-0.5">
+                        <Badge
+                          variant="outline"
+                          className="border-success/40 text-success bg-success/5 text-[10px] py-0.5"
+                        >
                           Lifetime
                         </Badge>
                       ) : (
                         <div className="space-y-0.5">
-                          <Badge variant="outline" className="border-warning/40 text-warning bg-warning/5 text-[10px] py-0.5">
+                          <Badge
+                            variant="outline"
+                            className="border-warning/40 text-warning bg-warning/5 text-[10px] py-0.5"
+                          >
                             Limited Expiry
                           </Badge>
                           <div className="text-[10px] text-muted-foreground font-light flex items-center gap-1">
@@ -554,7 +608,10 @@ function CourseAssignmentPanel() {
                 ))}
                 {filteredEnrollments.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-sm text-muted-foreground py-16">
+                    <TableCell
+                      colSpan={5}
+                      className="text-center text-sm text-muted-foreground py-16"
+                    >
                       No active enrollments found.
                     </TableCell>
                   </TableRow>
@@ -567,7 +624,9 @@ function CourseAssignmentPanel() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between border-t border-border/60 pt-4 text-xs">
               <span className="text-muted-foreground font-mono">
-                Showing page <strong className="text-foreground">{page}</strong> of <strong className="text-foreground">{totalPages}</strong> ({filteredEnrollments.length} total enrollments · 10 per page)
+                Showing page <strong className="text-foreground">{page}</strong> of{" "}
+                <strong className="text-foreground">{totalPages}</strong> (
+                {filteredEnrollments.length} total enrollments · 10 per page)
               </span>
               <div className="flex items-center gap-2">
                 <Button
@@ -600,7 +659,9 @@ function CourseAssignmentPanel() {
           <AlertDialogHeader>
             <AlertDialogTitle>Revoke Course Access?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will permanently revoke <strong>{toRevoke?.studentName}</strong>'s enrollment and progress in <strong>{toRevoke?.courseName}</strong> ({toRevoke?.courseCode}). They will lose all access immediately.
+              This will permanently revoke <strong>{toRevoke?.studentName}</strong>'s enrollment and
+              progress in <strong>{toRevoke?.courseName}</strong> ({toRevoke?.courseCode}). They
+              will lose all access immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

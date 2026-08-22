@@ -14,20 +14,36 @@ import {
 
 /* Ordered list of logos to scroll */
 const VENDOR_LOGOS: { name: string; Logo: (p: { h?: number }) => React.ReactNode }[] = [
-  { name: "AWS",         Logo: LogoAWS },
-  { name: "Microsoft",   Logo: LogoMicrosoft },
-  { name: "Cisco",       Logo: LogoCisco },
-  { name: "Red Hat",     Logo: LogoRedHat },
-  { name: "Oracle",      Logo: LogoOracle },
-  { name: "CompTIA",     Logo: LogoCompTIA },
+  { name: "AWS", Logo: LogoAWS },
+  { name: "Microsoft", Logo: LogoMicrosoft },
+  { name: "Cisco", Logo: LogoCisco },
+  { name: "Red Hat", Logo: LogoRedHat },
+  { name: "Oracle", Logo: LogoOracle },
+  { name: "CompTIA", Logo: LogoCompTIA },
   { name: "Pearson VUE", Logo: LogoPearsonVUE },
 ];
 
 const CARDS = [
-  { icon: MapPin,        title: "Tirunelveli Centre",   text: "Write global certification exams without leaving South Tamil Nadu." },
-  { icon: Globe,         title: "Global Certifications", text: "Exams from 250+ vendors delivered under Pearson VUE standards." },
-  { icon: ShieldCheck,   title: "Secure Exams",          text: "Monitored, compliant test environment with verified identity checks." },
-  { icon: CalendarClock, title: "Flexible Booking",      text: "Choose your slot across weekdays and weekends, year round." },
+  {
+    icon: MapPin,
+    title: "Tirunelveli Centre",
+    text: "Write global certification exams without leaving South Tamil Nadu.",
+  },
+  {
+    icon: Globe,
+    title: "Global Certifications",
+    text: "Exams from 250+ vendors delivered under Pearson VUE standards.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Secure Exams",
+    text: "Monitored, compliant test environment with verified identity checks.",
+  },
+  {
+    icon: CalendarClock,
+    title: "Flexible Booking",
+    text: "Choose your slot across weekdays and weekends, year round.",
+  },
 ];
 
 export function PearsonBanner() {
@@ -98,4 +114,3 @@ export function PearsonBanner() {
     </section>
   );
 }
-
