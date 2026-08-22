@@ -10,12 +10,33 @@ try {
   dns.setDefaultResultOrder?.("ipv4first");
 } catch (e) {}
 
+function normalizeSupabaseUrl(rawUrl: string): string {
+  if (!rawUrl) return "";
+  let url = rawUrl.trim().replace(/^["']|["']$/g, "");
+
+  // Direct Supabase hostname db.<ref>.supabase.co is IPv6-only and fails with ENOTFOUND on Vercel
+  if (url.includes(".supabase.co") && url.includes("db.")) {
+    const dbMatch = url.match(/db\.([a-z0-9]+)\.supabase\.co/i);
+    if (dbMatch && dbMatch[1]) {
+      const projectRef = dbMatch[1];
+      // Replace host with IPv4 compatible pooler
+      url = url.replace(`db.${projectRef}.supabase.co`, `aws-0-ap-northeast-1.pooler.supabase.com`);
+      // Ensure username contains the project ref required by Supabase pooler
+      if (url.includes("://postgres:") || url.includes("://postgres@")) {
+        url = url.replace("://postgres:", `://postgres.${projectRef}:`);
+      }
+    }
+  }
+
+  return url;
+}
+
 function getConnectionString(): string {
   if (process.env.DATABASE_URL) {
-    return process.env.DATABASE_URL.trim().replace(/^["']|["']$/g, "");
+    return normalizeSupabaseUrl(process.env.DATABASE_URL);
   }
   if (process.env.SUPABASE_DATABASE_URL) {
-    return process.env.SUPABASE_DATABASE_URL.trim().replace(/^["']|["']$/g, "");
+    return normalizeSupabaseUrl(process.env.SUPABASE_DATABASE_URL);
   }
   try {
     const envFile = path.resolve(process.cwd(), ".env");
@@ -23,7 +44,7 @@ function getConnectionString(): string {
       const content = fs.readFileSync(envFile, "utf8");
       const match = content.match(/DATABASE_URL=(.+)/);
       if (match && match[1]) {
-        return match[1].trim().replace(/^["']|["']$/g, "");
+        return normalizeSupabaseUrl(match[1]);
       }
     }
   } catch (e) {}
